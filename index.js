@@ -1,6 +1,7 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
+const fs = require('fs');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot Activo'));
@@ -13,34 +14,30 @@ const client = new Client({
 
 // ==========================================
 // CONFIGURACIÓN DE LOS ADMINS
-// Números extraídos de las capturas + el número extra
 // ==========================================
 const admins = [
-    '34623421390@c.us',
-    '51970905290@c.us',
-    '5219842416884@c.us',
-    '5216147914642@c.us',
-    '5218261510387@c.us',
-    '5217821662353@c.us',
-    '5219624023210@c.us',
-    '50684477977@c.us',
-    '5217773243291@c.us',
-    '593996122609@c.us',
-    '5492616395161@c.us',
-    '554788902892@c.us',
-    '5216862456423@c.us',
-    '5217821420226@c.us',
-    '16024871043@c.us',
-    '593978930965@c.us',
-    '5217205552328@c.us' // Número extra agregado
+    '34623421390@c.us', '51970905290@c.us', '5219842416884@c.us',
+    '5216147914642@c.us', '5218261510387@c.us', '5217821662353@c.us',
+    '5219624023210@c.us', '50684477977@c.us', '5217773243291@c.us',
+    '593996122609@c.us', '5492616395161@c.us', '554788902892@c.us',
+    '5216862456423@c.us', '5217821420226@c.us', '16024871043@c.us',
+    '593978930965@c.us', '5217205552328@c.us'
 ]; 
+
+// ==========================================
+// TUS FOTOS EXACTAS EN GITHUB
+// ==========================================
+const misFotos = [
+    'Nuevos espiritus.jpeg',
+    'Todos los espiritus 1.jpeg',
+    'Todos los espiritus 2.jpeg'
+];
 
 let cola = []; 
 let numTurno = 1800; 
 let fechaHoy = new Date().toDateString();
 let registroDiario = {}; 
 let turnosActivos = {}; 
-let plantillaMedia = null; 
 let statsAdmins = {}; 
 
 function revisarDia() {
@@ -105,10 +102,21 @@ client.on('message', async msg => {
     }
 
     if (texto === 'plantilla') {
-        if (plantillaMedia) {
-            return chat.sendMessage(plantillaMedia);
-        } else {
-            return msg.reply('⚠️ No hay ninguna plantilla guardada aún.');
+        try {
+            let enviadas = 0;
+            for (const foto of misFotos) {
+                if (fs.existsSync('./' + foto)) {
+                    const media = MessageMedia.fromFilePath('./' + foto);
+                    await chat.sendMessage(media);
+                    enviadas++;
+                }
+            }
+            if (enviadas === 0) {
+                return msg.reply('⚠️ Error: No se encontraron las imágenes. Revisa que los nombres en el código coincidan exactamente con los de GitHub.');
+            }
+        } catch (error) {
+            console.error(error);
+            return msg.reply('⚠️ Error al enviar las plantillas.');
         }
     }
 
@@ -221,20 +229,6 @@ ________________________
         } else {
             return msg.reply(`⚠️ No se encontró el turno ${idMayus} en la fila.`);
         }
-    }
-
-    if (texto === 'adplantilla') {
-        if (msg.hasMedia) {
-            plantillaMedia = await msg.downloadMedia();
-            return msg.reply('✅ Plantilla guardada exitosamente.');
-        } else if (msg.hasQuotedMsg) {
-            const quotedMsg = await msg.getQuotedMessage();
-            if (quotedMsg.hasMedia) {
-                plantillaMedia = await quotedMsg.downloadMedia();
-                return msg.reply('✅ Plantilla guardada exitosamente.');
-            }
-        }
-        return msg.reply('⚠️ Error: Debes enviar o responder a una imagen.');
     }
 });
 
