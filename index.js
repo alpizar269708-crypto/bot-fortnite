@@ -1,12 +1,12 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const express = require('express');
 const fs = require('fs');
+const pino = require('pino');
 
 const app = express();
-let qrImagen = ''; // Aquí se guardará la imagen del QR
+let qrImagen = ''; 
 
-// Servidor web que mostrará el QR perfecto en el navegador
 app.get('/', (req, res) => {
     if (qrImagen) {
         res.send(`
@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
                 <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
                     <h2>Escanea este código con tu WhatsApp</h2>
                     <img src="${qrImagen}" style="border: 10px solid white; border-radius: 10px; width: 300px; height: 300px;"/>
-                    <p>Si caduca, refresca esta página web (F5)</p>
+                    <p>Conexión ultrarrápida activada.</p>
                 </body>
             </html>
         `);
@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
         res.send(`
             <html>
                 <body style="display:flex; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
-                    <h2>El bot ya está conectado o está generando un nuevo QR... Espera unos segundos y recarga (F5).</h2>
+                    <h2>¡Bot conectado y listo para la acción!</h2>
                 </body>
             </html>
         `);
@@ -32,33 +32,13 @@ app.get('/', (req, res) => {
 
 app.listen(process.env.PORT || 3000, () => console.log('Servidor web en línea'));
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    authTimeoutMs: 120000, // <-- OBLIGA AL BOT A ESPERAR 2 MINUTOS
-    qrMaxRetries: 3,       // <-- EVITA QUE GENERE CÓDIGOS AL INFINITO
-    puppeteer: { 
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu'
-        ] 
-    }
-});
-
-// ==========================================
-// CONFIGURACIÓN DE LOS ADMINS
-// ==========================================
 const admins = [
-    '34623421390@c.us', '51970905290@c.us', '5219842416884@c.us',
-    '5216147914642@c.us', '5218261510387@c.us', '5217821662353@c.us',
-    '5219624023210@c.us', '50684477977@c.us', '5217773243291@c.us',
-    '593996122609@c.us', '5492616395161@c.us', '554788902892@c.us',
-    '5216862456423@c.us', '5217821420226@c.us', '16024871043@c.us',
-    '593978930965@c.us', '5217205552328@c.us'
+    '34623421390@s.whatsapp.net', '51970905290@s.whatsapp.net', '5219842416884@s.whatsapp.net',
+    '5216147914642@s.whatsapp.net', '5218261510387@s.whatsapp.net', '5217821662353@s.whatsapp.net',
+    '5219624023210@s.whatsapp.net', '50684477977@s.whatsapp.net', '5217773243291@s.whatsapp.net',
+    '593996122609@s.whatsapp.net', '5492616395161@s.whatsapp.net', '554788902892@s.whatsapp.net',
+    '5216862456423@s.whatsapp.net', '5217821420226@s.whatsapp.net', '16024871043@s.whatsapp.net',
+    '593978930965@s.whatsapp.net', '5217205552328@s.whatsapp.net'
 ]; 
 
 const misFotos = [
@@ -83,101 +63,136 @@ function revisarDia() {
     }
 }
 
-// Convertir el QR en una imagen PNG para mostrar en la web
-client.on('qr', qr => {
-    qrcode.toDataURL(qr, (err, url) => {
-        qrImagen = url;
-        console.log('=== NUEVO CÓDIGO QR GENERADO EN LA PÁGINA WEB ===');
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: pino({ level: 'silent' })
     });
-});
 
-client.on('ready', () => {
-    qrImagen = ''; // Limpiar el QR al conectar
-    console.log('Bot conectado y listo para los turnos!');
-});
-
-client.on('message', async msg => {
-    const chat = await msg.getChat();
-    const texto = msg.body.toLowerCase().trim();
-    const sender = msg.author || msg.from; 
-    const isAdmin = admins.includes(sender); 
-    
-    revisarDia();
-
-    if (texto === 'turno') {
-        if (!registroDiario[sender]) registroDiario[sender] = 0;
-        
-        if (registroDiario[sender] >= 2) {
-            return msg.reply('❌ Ya agotaste tus 2 ayudas del día de hoy.');
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        if (qr) {
+            qrcode.toDataURL(qr, (err, url) => {
+                qrImagen = url;
+            });
         }
-        if (cola.some(t => t.sender === sender) || turnosActivos[sender]) {
-            return msg.reply('⚠️ Ya estás en la fila o tienes un turno activo.');
+        if (connection === 'open') {
+            qrImagen = '';
+            console.log('=== BOT CONECTADO ULTRA RÁPIDO ===');
+        } else if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                startBot();
+            }
         }
+    });
 
-        const idTurno = 'T' + numTurno;
-        cola.push({ 
-            id: idTurno, 
-            sender: sender, 
-            tiempoRegistro: Date.now() 
-        });
-        numTurno++;
-        
-        return msg.reply(`✅ *Turno generado exitosamente: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas solicitadas hoy:* ${registroDiario[sender]}/2`);
-    }
+    sock.ev.on('creds.update', saveCreds);
 
-    const palabrasConfirmacion = ['aqui', 'aquí', 'confirmo', 'presente', '.aqui', '.aquí', '.confirmo', '.presente'];
-    
-    if (palabrasConfirmacion.includes(texto)) {
-        if (turnosActivos[sender]) {
-            clearTimeout(turnosActivos[sender].timer); 
-            const turnoId = turnosActivos[sender].id;
-            delete turnosActivos[sender]; 
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const m = messages[0];
+        if (!m.message || m.key.fromMe) return;
+
+        const chatJid = m.key.remoteJid;
+        const sender = m.key.participant || chatJid;
+        const cleanSender = sender.replace(/:\d+@/, '@');
+
+        const messageType = Object.keys(m.message)[0];
+        let texto = '';
+        if (messageType === 'conversation') {
+            texto = m.message.conversation;
+        } else if (messageType === 'extendedTextMessage') {
+            texto = m.message.extendedTextMessage.text;
+        }
+        texto = texto ? texto.toLowerCase().trim() : '';
+
+        const isUserAdmin = admins.some(admin => cleanSender.includes(admin.split('@')[0]));
+
+        revisarDia();
+
+        const reply = async (text, options = {}) => {
+            await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
+        };
+
+        if (texto === 'turno') {
+            if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
-            registroDiario[sender] += 1; 
-            return msg.reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[sender]}/2 ayudas hoy. ¡Procedan!`);
-        }
-    }
+            if (registroDiario[cleanSender] >= 2) {
+                return reply('❌ Ya agotaste tus 2 ayudas del día de hoy.');
+            }
+            if (cola.some(t => t.sender === cleanSender) || turnosActivos[cleanSender]) {
+                return reply('⚠️ Ya estás en la fila o tienes un turno activo.');
+            }
 
-    if (texto === 'plantilla') {
-        try {
-            let enviadas = 0;
-            for (const foto of misFotos) {
-                if (fs.existsSync('./' + foto)) {
-                    const media = MessageMedia.fromFilePath('./' + foto);
-                    await chat.sendMessage(media);
-                    enviadas++;
+            const idTurno = 'T' + numTurno;
+            cola.push({ 
+                id: idTurno, 
+                sender: cleanSender, 
+                tiempoRegistro: Date.now() 
+            });
+            numTurno++;
+            
+            return reply(`✅ *Turno generado exitosamente: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas solicitadas hoy:* ${registroDiario[cleanSender]}/2`);
+        }
+
+        const palabrasConfirmacion = ['aqui', 'aquí', 'confirmo', 'presente', '.aqui', '.aquí', '.confirmo', '.presente'];
+        if (palabrasConfirmacion.includes(texto)) {
+            if (turnosActivos[cleanSender]) {
+                clearTimeout(turnosActivos[cleanSender].timer); 
+                const turnoId = turnosActivos[cleanSender].id;
+                delete turnosActivos[cleanSender]; 
+                
+                registroDiario[cleanSender] += 1; 
+                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy. ¡Procedan!`);
+            }
+        }
+
+        if (texto === 'plantilla') {
+            try {
+                let enviadas = 0;
+                for (const foto of misFotos) {
+                    if (fs.existsSync('./' + foto)) {
+                        const buffer = fs.readFileSync('./' + foto);
+                        await sock.sendMessage(chatJid, { image: buffer });
+                        enviadas++;
+                    }
                 }
+                if (enviadas === 0) {
+                    return reply('⚠️ Error: No se encontraron las imágenes en el servidor.');
+                }
+            } catch (error) {
+                console.error(error);
+                return reply('⚠️ Error al enviar las plantillas.');
             }
-            if (enviadas === 0) {
-                return msg.reply('⚠️ Error: No se encontraron las imágenes en el servidor.');
-            }
-        } catch (error) {
-            console.error(error);
-            return msg.reply('⚠️ Error al enviar las plantillas.');
         }
-    }
 
-    if (!isAdmin) return; 
+        if (!isUserAdmin) return; 
 
-    if (texto === 'siguiente') {
-        if (cola.length === 0) return msg.reply('📭 No hay nadie en la fila.');
+        if (texto === 'siguiente') {
+            if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
 
-        const turnoActual = cola.shift(); 
-        
-        if (!statsAdmins[sender]) statsAdmins[sender] = 0;
-        statsAdmins[sender]++;
-        
-        let rango = "Soporte Técnico";
-        if (statsAdmins[sender] >= 50) rango = "Veterano";
-        if (statsAdmins[sender] >= 100) rango = "👑 Rey del Soporte";
+            const turnoActual = cola.shift(); 
+            
+            if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
+            statsAdmins[cleanSender]++;
+            
+            let rango = "Soporte Técnico";
+            if (statsAdmins[cleanSender] >= 50) rango = "Veterano";
+            if (statsAdmins[cleanSender] >= 100) rango = "👑 Rey del Soporte";
 
-        const msgLlamado = `📢 *TURNO EN ATENCIÓN*
+            const userPhone = turnoActual.sender.split('@')[0];
+            const adminPhone = cleanSender.split('@')[0];
+
+            const msgLlamado = `📢 *TURNO EN ATENCIÓN*
 
 🎫 Turno:
 *${turnoActual.id}*
 
 👤 Usuario:
-@${turnoActual.sender.split('@')[0]}
+@${userPhone}
 ________________________
 
 ✅ PARA CONFIRMAR TU TURNO RESPONDE:
@@ -198,12 +213,12 @@ ________________________
 👥 Personas delante: 0
 
 🛡️ Soporte asignado:
-@${sender.split('@')[0]}
+@${adminPhone}
 ________________________
 
 🕵️‍♂️ *INFORMACIÓN DEL SOPORTE*
 
-🎫 Turnos atendidos: ${statsAdmins[sender]}
+🎫 Turnos atendidos: ${statsAdmins[cleanSender]}
 
 🎖️ Rango:
 ${rango}
@@ -213,57 +228,62 @@ ________________________
 
 🤖 Sistema de Gestión de Turnos`;
 
-        await chat.sendMessage(msgLlamado, {
-            mentions: [turnoActual.sender, sender]
-        });
+            await sock.sendMessage(chatJid, {
+                text: msgLlamado,
+                mentions: [turnoActual.sender, cleanSender]
+            });
 
-        turnosActivos[turnoActual.sender] = {
-            id: turnoActual.id,
-            timer: setTimeout(async () => {
-                await chat.sendMessage(`❌ @${turnoActual.sender.split('@')[0]} no respondió. El turno ${turnoActual.id} ha sido finalizado automáticamente.`, { mentions: [turnoActual.sender] });
-                
-                registroDiario[turnoActual.sender] = (registroDiario[turnoActual.sender] || 0) + 1;
-                delete turnosActivos[turnoActual.sender];
-            }, 180000)
-        };
-        return;
-    }
-
-    if (texto === 'turnos') {
-        if (cola.length === 0) return msg.reply('📭 La fila está vacía.');
-        
-        let lista = `📋 *LISTA DE TURNOS*\n\n📊 Total en cola: ${cola.length}\n\n`;
-        const ahora = Date.now();
-
-        cola.forEach((t) => {
-            const minEspera = Math.floor((ahora - t.tiempoRegistro) / 60000); 
-            lista += `🎫 ${t.id}\n📌 Estado: PENDIENTE\n👤 @${t.sender.split('@')[0]}\n⏳ Espera: ${minEspera} min\n\n`;
-        });
-
-        return chat.sendMessage(lista, { mentions: cola.map(t => t.sender) });
-    }
-
-    if (texto.startsWith('atendido')) {
-        const partes = texto.split(/[\s.]+/);
-        const idBuscar = partes.find(p => p.startsWith('t'));
-        
-        if (!idBuscar) return msg.reply('⚠️ Usa el formato: Atendido . T1800');
-        
-        const idMayus = idBuscar.toUpperCase();
-        const index = cola.findIndex(t => t.id === idMayus);
-        
-        if (index !== -1) {
-            const removido = cola.splice(index, 1)[0];
-            registroDiario[removido.sender] = (registroDiario[removido.sender] || 0) + 1;
-            
-            if (!statsAdmins[sender]) statsAdmins[sender] = 0;
-            statsAdmins[sender]++;
-
-            return msg.reply(`✅ Turno ${idMayus} retirado de la fila y marcado como atendido.`);
-        } else {
-            return msg.reply(`⚠️ No se encontró el turno ${idMayus} en la fila.`);
+            turnosActivos[turnoActual.sender] = {
+                id: turnoActual.id,
+                timer: setTimeout(async () => {
+                    await sock.sendMessage(chatJid, {
+                        text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} ha sido finalizado automáticamente.`,
+                        mentions: [turnoActual.sender]
+                    });
+                    
+                    registroDiario[turnoActual.sender] = (registroDiario[turnoActual.sender] || 0) + 1;
+                    delete turnosActivos[turnoActual.sender];
+                }, 180000)
+            };
+            return;
         }
-    }
-});
 
-client.initialize();
+        if (texto === 'turnos') {
+            if (cola.length === 0) return reply('📭 La fila está vacía.');
+            
+            let lista = `📋 *LISTA DE TURNOS*\n\n📊 Total en cola: ${cola.length}\n\n`;
+            const ahora = Date.now();
+
+            cola.forEach((t) => {
+                const minEspera = Math.floor((ahora - t.tiempoRegistro) / 60000); 
+                lista += `🎫 ${t.id}\n📌 Estado: PENDIENTE\n👤 @${t.sender.split('@')[0]}\n⏳ Espera: ${minEspera} min\n\n`;
+            });
+
+            return sock.sendMessage(chatJid, { text: lista, mentions: cola.map(t => t.sender) });
+        }
+
+        if (texto.startsWith('atendido')) {
+            const partes = texto.split(/[\s.]+/);
+            const idBuscar = partes.find(p => p.startsWith('t'));
+            
+            if (!idBuscar) return reply('⚠️ Usa el formato: Atendido . T1800');
+            
+            const idMayus = idBuscar.toUpperCase();
+            const index = cola.findIndex(t => t.id === idMayus);
+            
+            if (index !== -1) {
+                const removido = cola.splice(index, 1)[0];
+                registroDiario[removido.sender] = (registroDiario[removido.sender] || 0) + 1;
+                
+                if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
+                statsAdmins[cleanSender]++;
+
+                return reply(`✅ Turno ${idMayus} retirado de la fila y marcado como atendido.`);
+            } else {
+                return reply(`⚠️ No se encontró el turno ${idMayus} en la fila.`);
+            }
+        }
+    });
+}
+
+startBot();
