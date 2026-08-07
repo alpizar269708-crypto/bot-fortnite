@@ -1,11 +1,17 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const express = require('express');
 const fs = require('fs');
+const path = require('path');
 const pino = require('pino');
 
 const app = express();
 let qrImagen = ''; 
+
+// Crear carpeta para plantillas personales si no existe
+if (!fs.existsSync('./plantillas')) {
+    fs.mkdirSync('./plantillas');
+}
 
 app.get('/', (req, res) => {
     if (qrImagen) {
@@ -41,7 +47,7 @@ const admins = [
     '593978930965@s.whatsapp.net', '5217205552328@s.whatsapp.net'
 ]; 
 
-const misFotos = [
+const misFotosFijas = [
     'Nuevos espiritus.jpeg',
     'Todos los espiritus 1.jpeg',
     'Todos los espiritus 2.jpeg'
@@ -101,13 +107,20 @@ async function startBot() {
         const cleanSender = sender.replace(/:\d+@/, '@');
 
         const messageType = Object.keys(m.message)[0];
-        let texto = '';
+        let rawText = '';
+        
         if (messageType === 'conversation') {
-            texto = m.message.conversation;
+            rawText = m.message.conversation;
         } else if (messageType === 'extendedTextMessage') {
-            texto = m.message.extendedTextMessage.text;
+            rawText = m.message.extendedTextMessage.text;
+        } else if (messageType === 'imageMessage') {
+            rawText = m.message.imageMessage.caption || '';
         }
-        texto = texto ? texto.toLowerCase().trim() : '';
+
+        // Limpieza total: sin mayúsculas, sin tildes y sin símbolos para máxima precisión
+        const texto = rawText 
+            ? rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, "").trim() 
+            : '';
 
         const isUserAdmin = admins.some(admin => cleanSender.includes(admin.split('@')[0]));
 
@@ -117,6 +130,50 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
+        // ==========================================
+        // COMANDO: adplantilla (Guardar foto personal)
+        // ==========================================
+        if (texto.includes('adplantilla')) {
+            const imageMessage = m.message.imageMessage || m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+            if (imageMessage) {
+                try {
+                    const buffer = await downloadMediaMessage(
+                        m,
+                        'buffer',
+                        {},
+                        { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
+                    );
+                    const userPhone = cleanSender.split('@')[0];
+                    const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
+                    fs.writeFileSync(filePath, buffer);
+                    return reply('✅ ¡Plantilla guardada correctamente! Usa *miplantilla* para verla cuando quieras.');
+                } catch (err) {
+                    console.error(err);
+                    return reply('⚠️ Error al guardar la imagen. Inténtalo de nuevo.');
+                }
+            } else {
+                return reply('⚠️ Debes enviar una imagen adjunta escribiendo *adplantilla* en el texto o descripción.');
+            }
+        }
+
+        // ==========================================
+        // COMANDO: miplantilla (Ver foto guardada)
+        // ==========================================
+        if (texto === 'miplantilla') {
+            const userPhone = cleanSender.split('@')[0];
+            const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
+            if (fs.existsSync(filePath)) {
+                const buffer = fs.readFileSync(filePath);
+                await sock.sendMessage(chatJid, { image: buffer, caption: '📌 Tu plantilla guardada:' }, { quoted: m });
+                return;
+            } else {
+                return reply('⚠️ No tienes ninguna plantilla guardada. Manda una foto con la palabra *adplantilla* para registrarla.');
+            }
+        }
+
+        // ==========================================
+        // COMANDOS PÚBLICOS
+        // ==========================================
         if (texto === 'turno') {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
@@ -138,7 +195,7 @@ async function startBot() {
             return reply(`✅ *Turno generado exitosamente: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas solicitadas hoy:* ${registroDiario[cleanSender]}/2`);
         }
 
-        const palabrasConfirmacion = ['aqui', 'aquí', 'confirmo', 'presente', '.aqui', '.aquí', '.confirmo', '.presente'];
+        const palabrasConfirmacion = ['aqui', 'confirmo', 'presente'];
         if (palabrasConfirmacion.includes(texto)) {
             if (turnosActivos[cleanSender]) {
                 clearTimeout(turnosActivos[cleanSender].timer); 
@@ -153,7 +210,7 @@ async function startBot() {
         if (texto === 'plantilla') {
             try {
                 let enviadas = 0;
-                for (const foto of misFotos) {
+                for (const foto of misFotosFijas) {
                     if (fs.existsSync('./' + foto)) {
                         const buffer = fs.readFileSync('./' + foto);
                         await sock.sendMessage(chatJid, { image: buffer });
@@ -161,7 +218,7 @@ async function startBot() {
                     }
                 }
                 if (enviadas === 0) {
-                    return reply('⚠️ Error: No se encontraron las imágenes en el servidor.');
+                    return reply('⚠️ Error: No se encontraron las imágenes fijas en el servidor.');
                 }
             } catch (error) {
                 console.error(error);
@@ -169,6 +226,9 @@ async function startBot() {
             }
         }
 
+        // ==========================================
+        // COMANDOS DE SOPORTE (Solo admins)
+        // ==========================================
         if (!isUserAdmin) return; 
 
         if (texto === 'siguiente') {
@@ -263,10 +323,10 @@ ________________________
         }
 
         if (texto.startsWith('atendido')) {
-            const partes = texto.split(/[\s.]+/);
+            const partes = texto.split(/\s+/);
             const idBuscar = partes.find(p => p.startsWith('t'));
             
-            if (!idBuscar) return reply('⚠️ Usa el formato: Atendido . T1800');
+            if (!idBuscar) return reply('⚠️ Usa el formato: Atendido T1800');
             
             const idMayus = idBuscar.toUpperCase();
             const index = cola.findIndex(t => t.id === idMayus);
