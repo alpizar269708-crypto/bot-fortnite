@@ -8,51 +8,31 @@ const pino = require('pino');
 const app = express();
 let qrImagen = ''; 
 
-// Crear carpeta para plantillas personales si no existe
-if (!fs.existsSync('./plantillas')) {
-    fs.mkdirSync('./plantillas');
+if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
+if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
+
+// Cargar admins desde archivo o usar tu número por defecto
+let admins = ['5217205553249@s.whatsapp.net']; 
+const adminsFile = './auth_info_baileys/admins.json';
+
+if (fs.existsSync(adminsFile)) {
+    admins = JSON.parse(fs.readFileSync(adminsFile));
+}
+
+function saveAdmins() {
+    fs.writeFileSync(adminsFile, JSON.stringify(admins));
 }
 
 app.get('/', (req, res) => {
     if (qrImagen) {
-        res.send(`
-            <html>
-                <head><title>Escanear Bot Fortnite</title></head>
-                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
-                    <h2>Escanea este código con tu WhatsApp</h2>
-                    <img src="${qrImagen}" style="border: 10px solid white; border-radius: 10px; width: 300px; height: 300px;"/>
-                    <p>Conexión ultrarrápida activada.</p>
-                </body>
-            </html>
-        `);
+        res.send(`<html><body style="background:#111; color:#fff; text-align:center; padding-top:50px;"><h2>Escanea el QR</h2><img src="${qrImagen}" width="300"/></body></html>`);
     } else {
-        res.send(`
-            <html>
-                <body style="display:flex; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
-                    <h2>¡Bot conectado y listo para la acción!</h2>
-                </body>
-            </html>
-        `);
+        res.send(`<html><body style="background:#111; color:#fff; text-align:center; padding-top:50px;"><h2>Bot Conectado y Listo</h2></body></html>`);
     }
 });
-
 app.listen(process.env.PORT || 3000, () => console.log('Servidor web en línea'));
 
-const admins = [
-    '34623421390@s.whatsapp.net', '51970905290@s.whatsapp.net', '5219842416884@s.whatsapp.net',
-    '5216147914642@s.whatsapp.net', '5218261510387@s.whatsapp.net', '5217821662353@s.whatsapp.net',
-    '5219624023210@s.whatsapp.net', '50684477977@s.whatsapp.net', '5217773243291@s.whatsapp.net',
-    '593996122609@s.whatsapp.net', '5492616395161@s.whatsapp.net', '554788902892@s.whatsapp.net',
-    '5216862456423@s.whatsapp.net', '5217821420226@s.whatsapp.net', '16024871043@s.whatsapp.net',
-    '593978930965@s.whatsapp.net', '5217205552328@s.whatsapp.net'
-]; 
-
-const misFotosFijas = [
-    'Nuevos espiritus.jpeg',
-    'Todos los espiritus 1.jpeg',
-    'Todos los espiritus 2.jpeg'
-];
-
+const misFotosFijas = ['Nuevos espiritus.jpeg', 'Todos los espiritus 1.jpeg', 'Todos los espiritus 2.jpeg'];
 let cola = []; 
 let numTurno = 1800; 
 let fechaHoy = new Date().toDateString();
@@ -71,26 +51,14 @@ function revisarDia() {
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-    
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false,
-        logger: pino({ level: 'silent' })
-    });
+    const sock = makeWASocket({ auth: state, printQRInTerminal: false, logger: pino({ level: 'silent' }) });
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            qrcode.toDataURL(qr, (err, url) => {
-                qrImagen = url;
-            });
-        }
-        if (connection === 'open') {
-            qrImagen = '';
-            console.log('=== BOT CONECTADO ULTRA RÁPIDO ===');
-        } else if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
+    sock.ev.on('connection.update', (update) => {
+        const { connection, qr, lastDisconnect } = update;
+        if (qr) qrcode.toDataURL(qr, (err, url) => { qrImagen = url; });
+        if (connection === 'open') { qrImagen = ''; console.log('=== BOT CONECTADO ULTRA RÁPIDO ==='); }
+        else if (connection === 'close') { 
+            if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
                 startBot();
             }
         }
@@ -105,24 +73,10 @@ async function startBot() {
         const chatJid = m.key.remoteJid;
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
-
-        const messageType = Object.keys(m.message)[0];
-        let rawText = '';
         
-        if (messageType === 'conversation') {
-            rawText = m.message.conversation;
-        } else if (messageType === 'extendedTextMessage') {
-            rawText = m.message.extendedTextMessage.text;
-        } else if (messageType === 'imageMessage') {
-            rawText = m.message.imageMessage.caption || '';
-        }
-
-        // Limpieza total: sin mayúsculas, sin tildes y sin símbolos para máxima precisión
-        const texto = rawText 
-            ? rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, "").trim() 
-            : '';
-
-        const isUserAdmin = admins.some(admin => cleanSender.includes(admin.split('@')[0]));
+        let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
+        const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
+        const isUserAdmin = admins.includes(cleanSender);
 
         revisarDia();
 
@@ -131,7 +85,43 @@ async function startBot() {
         };
 
         // ==========================================
-        // COMANDO: adplantilla (Guardar foto personal)
+        // GESTIÓN DINÁMICA DE ADMINS
+        // ==========================================
+        if (isUserAdmin && texto.startsWith('addsoporte')) {
+            const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
+            if (mentioned && mentioned.length > 0) {
+                const nuevoAdmin = mentioned[0];
+                if (!admins.includes(nuevoAdmin)) {
+                    admins.push(nuevoAdmin);
+                    saveAdmins();
+                    return reply(`✅ @${nuevoAdmin.split('@')[0]} ahora es administrador.`);
+                } else {
+                    return reply(`⚠️ Esa persona ya es administrador.`);
+                }
+            } else {
+                return reply(`⚠️ Debes etiquetar a la persona (ej: addsoporte @usuario).`);
+            }
+        }
+
+        if (isUserAdmin && texto.startsWith('delsoporte')) {
+            const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
+            if (mentioned && mentioned.length > 0) {
+                admins = admins.filter(a => a !== mentioned[0]);
+                saveAdmins();
+                return reply(`✅ Eliminado de administradores.`);
+            } else {
+                return reply(`⚠️ Debes etiquetar a la persona a eliminar.`);
+            }
+        }
+
+        if (isUserAdmin && texto === 'listaadmins') {
+            return reply(`👑 *Administradores actuales:*\n${admins.map(a => '@' + a.split('@')[0]).join('\n')}`, {
+                mentions: admins
+            });
+        }
+
+        // ==========================================
+        // PLANTILLAS PERSONALES (adplantilla / miplantilla)
         // ==========================================
         if (texto.includes('adplantilla')) {
             const imageMessage = m.message.imageMessage || m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
@@ -156,9 +146,6 @@ async function startBot() {
             }
         }
 
-        // ==========================================
-        // COMANDO: miplantilla (Ver foto guardada)
-        // ==========================================
         if (texto === 'miplantilla') {
             const userPhone = cleanSender.split('@')[0];
             const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
@@ -257,9 +244,9 @@ ________________________
 
 ✅ PARA CONFIRMAR TU TURNO RESPONDE:
 
-• .aqui
-• .confirmo
-• .presente
+• aqui
+• confirmo
+• presente
 
 ⏳ Tienes *3 minutos* para responder.
 ________________________
