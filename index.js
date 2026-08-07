@@ -14,7 +14,9 @@ if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 // Lista de admins con múltiples formatos para evitar errores
 // Incluye: JID completo, número con 521, número con 52, y solo los 10 dígitos
 let admins = [
-    '5217205553249', '7205553249', '527205553249',
+    '5217205553249', 
+    '7205553249', 
+    '527205553249',
     '34623421390', '4623421390',
     '51970905290', '970905290',
     '5219842416884', '9842416884', '529842416884',
