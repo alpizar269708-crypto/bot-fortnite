@@ -11,7 +11,7 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista inicial de respaldo
+// Lista inicial de respaldo de administradores
 let adminNumbers = [
     '7205553249', '4623421390', '970905290', '9842416884',
     '6147914642', '8261510387', '7821662353', '996122609',
@@ -81,9 +81,7 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // ==========================================
-        // COMANDO DE EMERGENCIA: soyadmin
-        // ==========================================
+        // Comando de emergencia para volverse admin
         if (texto === 'soyadmin') {
             if (!adminNumbers.includes(cleanSender)) {
                 adminNumbers.push(cleanSender);
@@ -92,18 +90,57 @@ async function startBot() {
             return reply('👑 ¡Listo! Te he registrado oficialmente como miembro de soporte con tu identificador actual.');
         }
 
-        // Validación de administrador por coincidencia de JID exacto o dígitos
         const isUserAdmin = adminNumbers.some(num => cleanSender.includes(num) || senderDigits.includes(num));
 
+        // Lista de comandos exclusivos de soporte
         const isAdminCommand = texto.startsWith('addsoporte') || 
                                texto.startsWith('delsoporte') || 
                                texto === 'listaadmins' || 
                                texto === 'siguiente' || 
                                texto === 'turnos' || 
-                               texto.startsWith('atendido');
+                               texto.startsWith('atendido') ||
+                               texto === 'kick' ||
+                               texto === 'del';
 
         if (isAdminCommand && !isUserAdmin) {
             return reply('⚠️ No eres miembro de soporte. Escribe *soyadmin* si deberías tener acceso.');
+        }
+
+        // ==========================================
+        // COMANDOS DE MODERACIÓN (Kick y Del)
+        // ==========================================
+        if (texto === 'kick') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            if (!contextInfo || !contextInfo.participant) {
+                return reply('⚠️ Debes responder (citar) al mensaje de la persona que deseas expulsar.');
+            }
+            const targetParticipant = contextInfo.participant;
+            try {
+                await sock.groupParticipantsUpdate(chatJid, [targetParticipant], 'remove');
+                return reply(`✅ Usuario expulsado del grupo exitosamente.`);
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al expulsar al usuario. Asegúrate de que el bot sea administrador del grupo.');
+            }
+        }
+
+        if (texto === 'del') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            if (!contextInfo || !contextInfo.stanzaId) {
+                return reply('⚠️ Debes responder (citar) al mensaje que deseas eliminar.');
+            }
+            const messageKey = {
+                remoteJid: chatJid,
+                id: contextInfo.stanzaId,
+                participant: contextInfo.participant
+            };
+            try {
+                await sock.sendMessage(chatJid, { delete: messageKey });
+                return; // No requiere respuesta de texto obligatoria, borra directo
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al eliminar el mensaje. Asegúrate de que el bot sea administrador.');
+            }
         }
 
         // ==========================================
@@ -308,7 +345,7 @@ ________________________
                 id: turnoActual.id,
                 timer: setTimeout(async () => {
                     await sock.sendMessage(chatJid, {
-                        text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} has sido finalizado automáticamente.`,
+                        text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} ha sido finalizado automáticamente.`,
                         mentions: [turnoActual.sender]
                     });
                     
