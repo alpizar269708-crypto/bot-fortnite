@@ -11,11 +11,9 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// ==========================================
-// LISTA FIJA DE ADMINISTRADORES (100% Blindada)
-// ==========================================
+// Lista fija de administradores
 let admins = [
-    '5217205553249@s.whatsapp.net', // Tu número
+    '5217205553249@s.whatsapp.net',
     '34623421390@s.whatsapp.net', 
     '51970905290@s.whatsapp.net', 
     '5219842416884@s.whatsapp.net',
@@ -35,18 +33,17 @@ let admins = [
     '5217773243291@s.whatsapp.net'
 ];
 
-// Función para extraer siempre los 10 dígitos reales sin importar prefijos (+52, 521, etc.)
-function getCoreNumber(jidOrPhone) {
-    if (!jidOrPhone) return '';
-    const digits = jidOrPhone.replace(/\D/g, '');
-    if (digits.length >= 12 && digits.startsWith('52')) {
-        let sub = digits.slice(2);
-        if (sub.startsWith('1')) {
-            sub = sub.slice(1);
-        }
-        return sub;
-    }
-    return digits.slice(-10); 
+// Función infalible: compara los últimos 10 dígitos ignorando prefijos de país
+function isUserAdminCheck(senderJid, adminList) {
+    if (!senderJid) return false;
+    const senderDigits = senderJid.replace(/\D/g, '');
+    const senderSuffix = senderDigits.slice(-10);
+
+    return adminList.some(admin => {
+        const adminDigits = admin.replace(/\D/g, '');
+        const adminSuffix = adminDigits.slice(-10);
+        return senderSuffix === adminSuffix;
+    });
 }
 
 app.get('/', (req, res) => {
@@ -99,12 +96,13 @@ async function startBot() {
         const chatJid = m.key.remoteJid;
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
-        const senderCore = getCoreNumber(cleanSender);
+        const senderDigits = cleanSender.replace(/\D/g, '');
+        const senderCore = senderDigits.slice(-10);
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
         
-        const isUserAdmin = admins.some(admin => getCoreNumber(admin) === senderCore);
+        const isUserAdmin = isUserAdminCheck(cleanSender, admins);
 
         revisarDia();
 
