@@ -11,9 +11,9 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista fija con los 10 dígitos principales de los administradores
+// Lista fija con los 10 dígitos principales de los administradores (incluyendo el número del bot)
 const adminNumbers = [
-    '7205553249', // Tu número
+    '7205553249', // Número del bot / tuyo
     '4623421390', 
     '970905290', 
     '9842416884',
@@ -84,7 +84,6 @@ async function startBot() {
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
         
-        // Extracción infalible de los dígitos del remitente
         const senderDigits = cleanSender.replace(/\D/g, '');
         const isUserAdmin = adminNumbers.some(num => senderDigits.includes(num));
         
@@ -97,7 +96,6 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // Bloquear comandos exclusivos de soporte si no es admin
         const isAdminCommand = texto.startsWith('addsoporte') || 
                                texto.startsWith('delsoporte') || 
                                texto === 'listaadmins' || 
@@ -109,9 +107,6 @@ async function startBot() {
             return reply('⚠️ No eres miembro de soporte.');
         }
 
-        // ==========================================
-        // GESTIÓN DINÁMICA DE ADMINS
-        // ==========================================
         if (texto.startsWith('addsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
@@ -147,9 +142,6 @@ async function startBot() {
             return reply(`👑 *Administradores activos:*\n${adminNumbers.map(n => '• ' + n).join('\n')}`);
         }
 
-        // ==========================================
-        // PLANTILLAS PERSONALES (adplantilla / miplantilla)
-        // ==========================================
         if (texto.includes('adplantilla')) {
             const imageMessage = m.message.imageMessage || m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
             if (imageMessage) {
@@ -185,9 +177,6 @@ async function startBot() {
             }
         }
 
-        // ==========================================
-        // COMANDOS PÚBLICOS
-        // ==========================================
         if (texto === 'turno') {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
@@ -247,9 +236,6 @@ async function startBot() {
             }
         }
 
-        // ==========================================
-        // COMANDOS DE SOPORTE (Solo admins)
-        // ==========================================
         if (texto === 'siguiente') {
             if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
 
