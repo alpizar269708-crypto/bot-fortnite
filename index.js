@@ -34,7 +34,19 @@ app.listen(process.env.PORT || 3000, () => console.log('Servidor web en línea')
 
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+    authTimeoutMs: 120000, // <-- OBLIGA AL BOT A ESPERAR 2 MINUTOS
+    qrMaxRetries: 3,       // <-- EVITA QUE GENERE CÓDIGOS AL INFINITO
+    puppeteer: { 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+        ] 
+    }
 });
 
 // ==========================================
