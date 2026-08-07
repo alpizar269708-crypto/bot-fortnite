@@ -11,46 +11,31 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista maestra predeterminada de administradores
-const defaultAdmins = [
-    '5217205553249@s.whatsapp.net',
+// ==========================================
+// LISTA FIJA DE ADMINISTRADORES (100% Blindada)
+// ==========================================
+let admins = [
+    '5217205553249@s.whatsapp.net', // Tu número
     '34623421390@s.whatsapp.net', 
     '51970905290@s.whatsapp.net', 
     '5219842416884@s.whatsapp.net',
     '5216147914642@s.whatsapp.net', 
     '5218261510387@s.whatsapp.net', 
     '5217821662353@s.whatsapp.net',
-    '5219624023210@s.whatsapp.net', 
-    '50684477977@s.whatsapp.net', 
-    '5217773243291@s.whatsapp.net',
-    '593996122609@s.whatsapp.net', 
+    '593996122609@s.whatsapp.net',
     '5492616395161@s.whatsapp.net', 
     '554788902892@s.whatsapp.net',
     '5216862456423@s.whatsapp.net', 
     '5217821420226@s.whatsapp.net', 
     '16024871043@s.whatsapp.net',
     '593978930965@s.whatsapp.net', 
-    '5217205552328@s.whatsapp.net'
-]; 
+    '5217205552328@s.whatsapp.net',
+    '5219624023210@s.whatsapp.net', 
+    '50684477977@s.whatsapp.net', 
+    '5217773243291@s.whatsapp.net'
+];
 
-let admins = [...defaultAdmins];
-const adminsFile = './auth_info_baileys/admins.json';
-
-// Fusionar con el archivo guardado sin perder los predeterminados
-if (fs.existsSync(adminsFile)) {
-    try {
-        const savedAdmins = JSON.parse(fs.readFileSync(adminsFile));
-        admins = Array.from(new Set([...defaultAdmins, ...savedAdmins]));
-    } catch (e) {
-        admins = [...defaultAdmins];
-    }
-}
-
-function saveAdmins() {
-    fs.writeFileSync(adminsFile, JSON.stringify(admins));
-}
-
-// Función robusta para extraer siempre los 10 dígitos reales
+// Función para extraer siempre los 10 dígitos reales sin importar prefijos (+52, 521, etc.)
 function getCoreNumber(jidOrPhone) {
     if (!jidOrPhone) return '';
     const digits = jidOrPhone.replace(/\D/g, '');
@@ -144,7 +129,6 @@ async function startBot() {
                 const nuevoAdmin = mentioned[0];
                 if (!admins.includes(nuevoAdmin)) {
                     admins.push(nuevoAdmin);
-                    saveAdmins();
                     return reply(`✅ @${nuevoAdmin.split('@')[0]} ahora es administrador.`);
                 } else {
                     return reply(`⚠️ Esa persona ya es administrador.`);
@@ -158,7 +142,6 @@ async function startBot() {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 admins = admins.filter(a => a !== mentioned[0]);
-                saveAdmins();
                 return reply(`✅ Eliminado de administradores.`);
             } else {
                 return reply(`⚠️ Debes etiquetar a la persona a eliminar.`);
