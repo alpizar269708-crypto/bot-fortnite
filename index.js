@@ -1,10 +1,35 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcode = require('qrcode');
 const express = require('express');
 const fs = require('fs');
 
 const app = express();
-app.get('/', (req, res) => res.send('Bot Activo'));
+let qrImagen = ''; // Aquí se guardará la imagen del QR
+
+// Servidor web que mostrará el QR perfecto en el navegador
+app.get('/', (req, res) => {
+    if (qrImagen) {
+        res.send(`
+            <html>
+                <head><title>Escanear Bot Fortnite</title></head>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
+                    <h2>Escanea este código con tu WhatsApp</h2>
+                    <img src="${qrImagen}" style="border: 10px solid white; border-radius: 10px; width: 300px; height: 300px;"/>
+                    <p>Si caduca, refresca esta página web (F5)</p>
+                </body>
+            </html>
+        `);
+    } else {
+        res.send(`
+            <html>
+                <body style="display:flex; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
+                    <h2>El bot ya está conectado o está generando un nuevo QR... Espera unos segundos y recarga (F5).</h2>
+                </body>
+            </html>
+        `);
+    }
+});
+
 app.listen(process.env.PORT || 3000, () => console.log('Servidor web en línea'));
 
 const client = new Client({
@@ -24,9 +49,6 @@ const admins = [
     '593978930965@c.us', '5217205552328@c.us'
 ]; 
 
-// ==========================================
-// TUS FOTOS EXACTAS EN GITHUB
-// ==========================================
 const misFotos = [
     'Nuevos espiritus.jpeg',
     'Todos los espiritus 1.jpeg',
@@ -49,12 +71,18 @@ function revisarDia() {
     }
 }
 
+// Convertir el QR en una imagen PNG para mostrar en la web
 client.on('qr', qr => {
-    qrcode.generate(qr, {small: true});
-    console.log('=== ESCANEA ESTE QR EN TU WHATSAPP ===');
+    qrcode.toDataURL(qr, (err, url) => {
+        qrImagen = url;
+        console.log('=== NUEVO CÓDIGO QR GENERADO EN LA PÁGINA WEB ===');
+    });
 });
 
-client.on('ready', () => console.log('Bot conectado y listo para los turnos!'));
+client.on('ready', () => {
+    qrImagen = ''; // Limpiar el QR al conectar
+    console.log('Bot conectado y listo para los turnos!');
+});
 
 client.on('message', async msg => {
     const chat = await msg.getChat();
@@ -64,9 +92,6 @@ client.on('message', async msg => {
     
     revisarDia();
 
-    // ==========================================
-    // COMANDOS PÚBLICOS
-    // ==========================================
     if (texto === 'turno') {
         if (!registroDiario[sender]) registroDiario[sender] = 0;
         
@@ -112,7 +137,7 @@ client.on('message', async msg => {
                 }
             }
             if (enviadas === 0) {
-                return msg.reply('⚠️ Error: No se encontraron las imágenes. Revisa que los nombres en el código coincidan exactamente con los de GitHub.');
+                return msg.reply('⚠️ Error: No se encontraron las imágenes en el servidor.');
             }
         } catch (error) {
             console.error(error);
@@ -120,9 +145,6 @@ client.on('message', async msg => {
         }
     }
 
-    // ==========================================
-    // COMANDOS DE SOPORTE (Solo admins)
-    // ==========================================
     if (!isAdmin) return; 
 
     if (texto === 'siguiente') {
