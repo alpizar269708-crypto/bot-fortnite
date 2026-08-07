@@ -73,10 +73,13 @@ async function startBot() {
         const chatJid = m.key.remoteJid;
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
+        const senderPhone = cleanSender.split('@')[0];
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
-        const isUserAdmin = admins.includes(cleanSender);
+        
+        // Verificación de administrador basada puramente en el número de teléfono
+        const isUserAdmin = admins.some(admin => admin.split('@')[0] === senderPhone);
 
         revisarDia();
 
@@ -191,6 +194,13 @@ async function startBot() {
                 
                 registroDiario[cleanSender] += 1; 
                 return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy. ¡Procedan!`);
+            } else {
+                const enCola = cola.some(t => t.sender === cleanSender);
+                if (enCola) {
+                    return reply('⏳ Todavía no has sido llamado. Espera a que el soporte te llame con el comando *siguiente*.');
+                } else {
+                    return reply('⚠️ No tienes ningún turno activo ni estás en la fila. Escribe *turno* para solicitar uno.');
+                }
             }
         }
 
@@ -231,7 +241,7 @@ async function startBot() {
             if (statsAdmins[cleanSender] >= 100) rango = "👑 Rey del Soporte";
 
             const userPhone = turnoActual.sender.split('@')[0];
-            const adminPhone = cleanSender.split('@')[0];
+            const adminPhone = senderPhone;
 
             const msgLlamado = `📢 *TURNO EN ATENCIÓN*
 
