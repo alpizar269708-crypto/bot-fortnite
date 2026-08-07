@@ -11,26 +11,13 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista fija con los 10 dígitos principales de los administradores (incluyendo el número del bot)
-const adminNumbers = [
-    '7205553249', // Número del bot / tuyo
-    '4623421390', 
-    '970905290', 
-    '9842416884',
-    '6147914642', 
-    '8261510387', 
-    '7821662353',
-    '996122609',
-    '2616395161', 
-    '554788902892',
-    '6862456423', 
-    '7821420226', 
-    '6024871043',
-    '978930965', 
-    '7205552328',
-    '9624023210', 
-    '84477977', 
-    '7773243291'
+// Lista inicial de respaldo
+let adminNumbers = [
+    '7205553249', '4623421390', '970905290', '9842416884',
+    '6147914642', '8261510387', '7821662353', '996122609',
+    '2616395161', '554788902892', '6862456423', '7821420226', 
+    '6024871043', '978930965', '7205552328', '9624023210', 
+    '84477977', '7773243291'
 ];
 
 app.get('/', (req, res) => {
@@ -83,9 +70,7 @@ async function startBot() {
         const chatJid = m.key.remoteJid;
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
-        
         const senderDigits = cleanSender.replace(/\D/g, '');
-        const isUserAdmin = adminNumbers.some(num => senderDigits.includes(num));
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
@@ -96,6 +81,20 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
+        // ==========================================
+        // COMANDO DE EMERGENCIA: soyadmin
+        // ==========================================
+        if (texto === 'soyadmin') {
+            if (!adminNumbers.includes(cleanSender)) {
+                adminNumbers.push(cleanSender);
+                adminNumbers.push(senderDigits);
+            }
+            return reply('👑 ¡Listo! Te he registrado oficialmente como miembro de soporte con tu identificador actual.');
+        }
+
+        // Validación de administrador por coincidencia de JID exacto o dígitos
+        const isUserAdmin = adminNumbers.some(num => cleanSender.includes(num) || senderDigits.includes(num));
+
         const isAdminCommand = texto.startsWith('addsoporte') || 
                                texto.startsWith('delsoporte') || 
                                texto === 'listaadmins' || 
@@ -104,16 +103,19 @@ async function startBot() {
                                texto.startsWith('atendido');
 
         if (isAdminCommand && !isUserAdmin) {
-            return reply('⚠️ No eres miembro de soporte.');
+            return reply('⚠️ No eres miembro de soporte. Escribe *soyadmin* si deberías tener acceso.');
         }
 
+        // ==========================================
+        // GESTIÓN DINÁMICA DE ADMINS
+        // ==========================================
         if (texto.startsWith('addsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
-                const targetDigits = mentioned[0].replace(/\D/g, '').slice(-10);
-                if (!adminNumbers.includes(targetDigits)) {
-                    adminNumbers.push(targetDigits);
-                    return reply(`✅ @${mentioned[0].split('@')[0]} ahora es administrador.`);
+                const target = mentioned[0];
+                if (!adminNumbers.includes(target)) {
+                    adminNumbers.push(target);
+                    return reply(`✅ @${target.split('@')[0]} ahora es administrador.`);
                 } else {
                     return reply(`⚠️ Esa persona ya es administrador.`);
                 }
@@ -125,23 +127,21 @@ async function startBot() {
         if (texto.startsWith('delsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
-                const targetDigits = mentioned[0].replace(/\D/g, '').slice(-10);
-                const index = adminNumbers.indexOf(targetDigits);
-                if (index > -1) {
-                    adminNumbers.splice(index, 1);
-                    return reply(`✅ Eliminado de administradores.`);
-                } else {
-                    return reply(`⚠️ Ese usuario no estaba en la lista.`);
-                }
+                const target = mentioned[0];
+                adminNumbers = adminNumbers.filter(n => n !== target);
+                return reply(`✅ Eliminado de administradores.`);
             } else {
                 return reply(`⚠️ Debes etiquetar a la persona a eliminar.`);
             }
         }
 
         if (texto === 'listaadmins') {
-            return reply(`👑 *Administradores activos:*\n${adminNumbers.map(n => '• ' + n).join('\n')}`);
+            return reply(`👑 *Identificadores de soporte activos:*\n${adminNumbers.map(n => '• ' + n).join('\n')}`);
         }
 
+        // ==========================================
+        // PLANTILLAS PERSONALES
+        // ==========================================
         if (texto.includes('adplantilla')) {
             const imageMessage = m.message.imageMessage || m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
             if (imageMessage) {
@@ -177,6 +177,9 @@ async function startBot() {
             }
         }
 
+        // ==========================================
+        // COMANDOS PÚBLICOS
+        // ==========================================
         if (texto === 'turno') {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
@@ -236,6 +239,9 @@ async function startBot() {
             }
         }
 
+        // ==========================================
+        // COMANDOS DE SOPORTE (Solo admins)
+        // ==========================================
         if (texto === 'siguiente') {
             if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
 
@@ -302,7 +308,7 @@ ________________________
                 id: turnoActual.id,
                 timer: setTimeout(async () => {
                     await sock.sendMessage(chatJid, {
-                        text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} ha sido finalizado automáticamente.`,
+                        text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} has sido finalizado automáticamente.`,
                         mentions: [turnoActual.sender]
                     });
                     
