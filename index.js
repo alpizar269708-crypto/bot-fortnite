@@ -11,8 +11,8 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista completa de administradores iniciales
-let admins = [
+// Lista maestra predeterminada de administradores
+const defaultAdmins = [
     '5217205553249@s.whatsapp.net',
     '34623421390@s.whatsapp.net', 
     '51970905290@s.whatsapp.net', 
@@ -33,27 +33,33 @@ let admins = [
     '5217205552328@s.whatsapp.net'
 ]; 
 
+let admins = [...defaultAdmins];
 const adminsFile = './auth_info_baileys/admins.json';
 
+// Fusionar con el archivo guardado sin perder los predeterminados
 if (fs.existsSync(adminsFile)) {
-    admins = JSON.parse(fs.readFileSync(adminsFile));
+    try {
+        const savedAdmins = JSON.parse(fs.readFileSync(adminsFile));
+        admins = Array.from(new Set([...defaultAdmins, ...savedAdmins]));
+    } catch (e) {
+        admins = [...defaultAdmins];
+    }
 }
 
 function saveAdmins() {
     fs.writeFileSync(adminsFile, JSON.stringify(admins));
 }
 
-// Función infalible para extraer los 10 dígitos reales del número sin importar prefijos (+52, 521, etc.)
+// Función robusta para extraer siempre los 10 dígitos reales
 function getCoreNumber(jidOrPhone) {
     if (!jidOrPhone) return '';
     const digits = jidOrPhone.replace(/\D/g, '');
-    if (digits.startsWith('52')) {
-        if (digits.length === 12 && digits[2] === '1') {
-            return digits.slice(3); 
+    if (digits.length >= 12 && digits.startsWith('52')) {
+        let sub = digits.slice(2);
+        if (sub.startsWith('1')) {
+            sub = sub.slice(1);
         }
-        if (digits.length === 12) {
-            return digits.slice(2); 
-        }
+        return sub;
     }
     return digits.slice(-10); 
 }
@@ -113,7 +119,6 @@ async function startBot() {
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
         
-        // Verificación blindada de administrador usando los 10 dígitos limpios
         const isUserAdmin = admins.some(admin => getCoreNumber(admin) === senderCore);
 
         revisarDia();
@@ -122,7 +127,6 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // Interceptar comandos de soporte si el usuario no es admin
         const isAdminCommand = texto.startsWith('addsoporte') || 
                                texto.startsWith('delsoporte') || 
                                texto === 'listaadmins' || 
@@ -134,9 +138,6 @@ async function startBot() {
             return reply('⚠️ No eres miembro de soporte.');
         }
 
-        // ==========================================
-        // GESTIÓN DINÁMICA DE ADMINS
-        // ==========================================
         if (texto.startsWith('addsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
@@ -170,9 +171,6 @@ async function startBot() {
             });
         }
 
-        // ==========================================
-        // PLANTILLAS PERSONALES (adplantilla / miplantilla)
-        // ==========================================
         if (texto.includes('adplantilla')) {
             const imageMessage = m.message.imageMessage || m.message.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
             if (imageMessage) {
@@ -208,9 +206,6 @@ async function startBot() {
             }
         }
 
-        // ==========================================
-        // COMANDOS PÚBLICOS
-        // ==========================================
         if (texto === 'turno') {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
@@ -270,9 +265,6 @@ async function startBot() {
             }
         }
 
-        // ==========================================
-        // COMANDOS DE SOPORTE (Solo admins)
-        // ==========================================
         if (texto === 'siguiente') {
             if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
 
