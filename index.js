@@ -11,8 +11,28 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Cargar admins desde archivo o usar tu número por defecto
-let admins = ['5217205553249@s.whatsapp.net']; 
+// Lista completa de administradores iniciales
+let admins = [
+    '5217205553249@s.whatsapp.net',
+    '34623421390@s.whatsapp.net', 
+    '51970905290@s.whatsapp.net', 
+    '5219842416884@s.whatsapp.net',
+    '5216147914642@s.whatsapp.net', 
+    '5218261510387@s.whatsapp.net', 
+    '5217821662353@s.whatsapp.net',
+    '5219624023210@s.whatsapp.net', 
+    '50684477977@s.whatsapp.net', 
+    '5217773243291@s.whatsapp.net',
+    '593996122609@s.whatsapp.net', 
+    '5492616395161@s.whatsapp.net', 
+    '554788902892@s.whatsapp.net',
+    '5216862456423@s.whatsapp.net', 
+    '5217821420226@s.whatsapp.net', 
+    '16024871043@s.whatsapp.net',
+    '593978930965@s.whatsapp.net', 
+    '5217205552328@s.whatsapp.net'
+]; 
+
 const adminsFile = './auth_info_baileys/admins.json';
 
 if (fs.existsSync(adminsFile)) {
@@ -21,6 +41,21 @@ if (fs.existsSync(adminsFile)) {
 
 function saveAdmins() {
     fs.writeFileSync(adminsFile, JSON.stringify(admins));
+}
+
+// Función infalible para extraer los 10 dígitos reales del número sin importar prefijos (+52, 521, etc.)
+function getCoreNumber(jidOrPhone) {
+    if (!jidOrPhone) return '';
+    const digits = jidOrPhone.replace(/\D/g, '');
+    if (digits.startsWith('52')) {
+        if (digits.length === 12 && digits[2] === '1') {
+            return digits.slice(3); 
+        }
+        if (digits.length === 12) {
+            return digits.slice(2); 
+        }
+    }
+    return digits.slice(-10); 
 }
 
 app.get('/', (req, res) => {
@@ -73,13 +108,13 @@ async function startBot() {
         const chatJid = m.key.remoteJid;
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
-        const senderPhone = cleanSender.split('@')[0];
+        const senderCore = getCoreNumber(cleanSender);
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
         
-        // Verificación de administrador basada puramente en el número de teléfono
-        const isUserAdmin = admins.some(admin => admin.split('@')[0] === senderPhone);
+        // Verificación blindada de administrador usando los 10 dígitos limpios
+        const isUserAdmin = admins.some(admin => getCoreNumber(admin) === senderCore);
 
         revisarDia();
 
@@ -87,10 +122,22 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
+        // Interceptar comandos de soporte si el usuario no es admin
+        const isAdminCommand = texto.startsWith('addsoporte') || 
+                               texto.startsWith('delsoporte') || 
+                               texto === 'listaadmins' || 
+                               texto === 'siguiente' || 
+                               texto === 'turnos' || 
+                               texto.startsWith('atendido');
+
+        if (isAdminCommand && !isUserAdmin) {
+            return reply('⚠️ No eres miembro de soporte.');
+        }
+
         // ==========================================
         // GESTIÓN DINÁMICA DE ADMINS
         // ==========================================
-        if (isUserAdmin && texto.startsWith('addsoporte')) {
+        if (texto.startsWith('addsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 const nuevoAdmin = mentioned[0];
@@ -106,7 +153,7 @@ async function startBot() {
             }
         }
 
-        if (isUserAdmin && texto.startsWith('delsoporte')) {
+        if (texto.startsWith('delsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 admins = admins.filter(a => a !== mentioned[0]);
@@ -117,7 +164,7 @@ async function startBot() {
             }
         }
 
-        if (isUserAdmin && texto === 'listaadmins') {
+        if (texto === 'listaadmins') {
             return reply(`👑 *Administradores actuales:*\n${admins.map(a => '@' + a.split('@')[0]).join('\n')}`, {
                 mentions: admins
             });
@@ -136,7 +183,7 @@ async function startBot() {
                         {},
                         { logger: pino({ level: 'silent' }), reuploadRequest: sock.updateMediaMessage }
                     );
-                    const userPhone = cleanSender.split('@')[0];
+                    const userPhone = senderCore;
                     const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
                     fs.writeFileSync(filePath, buffer);
                     return reply('✅ ¡Plantilla guardada correctamente! Usa *miplantilla* para verla cuando quieras.');
@@ -150,7 +197,7 @@ async function startBot() {
         }
 
         if (texto === 'miplantilla') {
-            const userPhone = cleanSender.split('@')[0];
+            const userPhone = senderCore;
             const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
             if (fs.existsSync(filePath)) {
                 const buffer = fs.readFileSync(filePath);
@@ -226,8 +273,6 @@ async function startBot() {
         // ==========================================
         // COMANDOS DE SOPORTE (Solo admins)
         // ==========================================
-        if (!isUserAdmin) return; 
-
         if (texto === 'siguiente') {
             if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
 
@@ -241,7 +286,7 @@ async function startBot() {
             if (statsAdmins[cleanSender] >= 100) rango = "👑 Rey del Soporte";
 
             const userPhone = turnoActual.sender.split('@')[0];
-            const adminPhone = senderPhone;
+            const adminPhone = cleanSender.split('@')[0];
 
             const msgLlamado = `📢 *TURNO EN ATENCIÓN*
 
