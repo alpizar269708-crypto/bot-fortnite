@@ -111,7 +111,8 @@ async function startBot() {
                                    texto === 'listaadmins' || 
                                    texto === 'kick' || 
                                    texto === 'del' || 
-                                   texto === 'warn';
+                                   texto === 'warn' ||
+                                   texto.startsWith('cleanwarns');
 
         if (isAdminOnlyCommand && !isUserAdmin) {
             return reply('⚠️ No tienes privilegios de Administrador General.');
@@ -150,9 +151,7 @@ async function startBot() {
                 return reply('⚠️ Debes citar el mensaje que deseas eliminar.');
             }
             try {
-                // Eliminar el mensaje seleccionado
                 await sock.sendMessage(chatJid, { delete: { remoteJid: chatJid, id: contextInfo.stanzaId, participant: contextInfo.participant } });
-                // Eliminar el mensaje del comando 'del'
                 await sock.sendMessage(chatJid, { delete: m.key });
             } catch (err) {
                 console.error(err);
@@ -181,6 +180,29 @@ async function startBot() {
                 }
             } else {
                 return reply(`⚠️ Advertencia ${warnings[target]}/3 para @${targetPhone}.`, { mentions: [target] });
+            }
+        }
+
+        if (texto.startsWith('cleanwarns')) {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            let target = null;
+            if (contextInfo && contextInfo.participant) {
+                target = contextInfo.participant;
+            } else {
+                const mentioned = contextInfo?.mentionedJid;
+                if (mentioned && mentioned.length > 0) {
+                    target = mentioned[0];
+                }
+            }
+            if (!target) {
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a la que deseas limpiar las advertencias.');
+            }
+            const targetPhone = target.split('@')[0];
+            if (warnings[target]) {
+                delete warnings[target];
+                return reply(`✅ Se han limpiado todas las advertencias del usuario @${targetPhone}.`, { mentions: [target] });
+            } else {
+                return reply(`ℹ️ El usuario @${targetPhone} no tiene advertencias activas registradas.`, { mentions: [target] });
             }
         }
 
@@ -219,7 +241,7 @@ async function startBot() {
                 const target = mentioned[0];
                 if (!soportes.includes(target)) {
                     soportes.push(target);
-                    return reply(`✅ @${target.split('@')[0]} ahora es Soporte (sin privilegios de moderación).`);
+                    return reply(`✅ @${target.split('@')[0]} ahora es Soporte.`);
                 } else {
                     return reply(`⚠️ Esa persona ya es soporte.`);
                 }
@@ -333,7 +355,7 @@ async function startBot() {
                 
                 registroDiario[cleanSender] += 1; 
                 const adminPhone = assignedAdmin ? assignedAdmin.split('@')[0] : '';
-                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, ponte en contacto con cái soporte asignado @${adminPhone}`, {
+                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, ponte en contacto con el soporte asignado @${adminPhone}`, {
                     mentions: assignedAdmin ? [assignedAdmin] : []
                 });
             } else {
