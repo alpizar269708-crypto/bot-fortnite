@@ -18,10 +18,11 @@ let admins = [
 let soportes = [
     '4623421390', '970905290'
 ];
-let bannedUsers = []; // Lista de usuarios baneados de usar el bot
+let bannedUsers = []; 
 
-let warnings = {}; // { userJid: count }
-let lastAttended = {}; // { adminJid: timestamp }
+let warnings = {}; 
+let lastAttended = {}; 
+let lastMiturnoTime = {}; 
 
 app.get('/', (req, res) => {
     if (qrImagen) {
@@ -66,6 +67,88 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // ==========================================
+    // EVENTO DE BIENVENIDA PARA NUEVOS MIEMBROS
+    // ==========================================
+    sock.ev.on('group-participants-update', async (update) => {
+        const { id: chatJid, participants, action } = update;
+        if (action === 'add') {
+            for (const user of participants) {
+                const userPhone = user.split('@')[0];
+                const caption = `✧༺✦𝑩𝒊𝒆𝒏𝒗𝒆𝒏𝒊𝒅@✦༻✧
+ 
+💌 Hola @${userPhone}
+ 
+╭─────────────
+👻 COMUNIDAD DE
+INTERCAMBIO DE ESPÍRITUS FORTNITE 👻
+ 
+Grupo creado para apoyar a los jugadores en la recolección
+de espíritus mediante intercambios, cooperación y apoyo mutuo.
+ 
+📜* NORMAS*
+ 
+✅ Indica claramente qué espíritus
+tienes y cuáles necesitas.
+✅ Mantén respeto y buena
+convivencia en todo momento, evitando la toxicidad y responder de mala forma a
+quien no lo está haciendo contigo.
+✅ Los intercambios deben hacerse
+de forma ordenada y responsable.
+🤝 Se fomenta ayudar a
+otros miembros cuando sea posible.
+ 
+🚫 PROHIBIDO
+ 
+❌ Entrar solo a pedir sin aportar
+a la comunidad. Incluso con excusas como "Primero completo mi colección y
+luego les presto". 
+❌ Actitudes de burla, arrogancia
+o conflicto.
+❌ Falsas ofertas de espíritus o
+negarse a comprobar lo publicado.
+❌ Spam o mensajes fuera del tema
+(usa el grupo correspondiente para charlas).
+❌️ Pedir intercambios por objetos
+cosméticos o económicos para ayudarles (incluso si dices que es opcional, a
+menos que la persona te lo de por agradecimiento sin que tú hayas mencionado o
+insinuado algo al respecto).
+ 
+⚠️ Quienes generen conflictos o
+no colaboren podrán ser removidos, también aquellos que envíen contenido
+altamente explícito o +18.
+  
+🎮 Comunidad basada en
+respeto, apoyo y progreso conjunto.
+ 
+Utiliza el comando "help" para desplegar el menú
+del bot, el menú es este:
+
+* turno *- Solicita un turno en la fila.
+* cancelarturno *- Cancela tu turno actual (cuenta como ayuda utilizada del día).
+* aqui / confirmo / presente *- Confirma tu turno al ser llamado.
+* plantilla *- Envía las imágenes fijas.
+* adplantilla *- Guarda tu plantilla personalizada (adjuntando foto).
+* miplantilla *- Muestra tu plantilla guardada.
+* help *- Muestra esta lista de comandos.`;
+
+                try {
+                    await sock.sendMessage(chatJid, { 
+                        image: { url: 'https://raw.githubusercontent.com/alpizar269708-crypto/bot-fortnite/e4b4a1ea9247840979d7567cbb5566d12c1a95fd/bienvenido.jpeg' }, 
+                        caption: caption,
+                        mentions: [user]
+                    });
+                } catch (err) {
+                    console.error('Error al enviar la imagen de bienvenida, enviando solo texto:', err);
+                    await sock.sendMessage(chatJid, { 
+                        text: caption,
+                        mentions: [user]
+                    });
+                }
+            }
+        }
+    });
+
     sock.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0];
         if (!m.message || m.key.fromMe) return;
@@ -75,7 +158,6 @@ async function startBot() {
         const cleanSender = sender.replace(/:\d+@/, '@');
         const senderDigits = cleanSender.replace(/\D/g, '');
 
-        // Si el usuario está baneado del bot, ignoramos sus mensajes por completo
         if (bannedUsers.includes(cleanSender) || bannedUsers.some(b => senderDigits.includes(b))) {
             return;
         }
@@ -89,23 +171,6 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // Comandos de auto-asignación rápida
-        if (texto === 'soyadmin') {
-            if (!admins.includes(cleanSender)) {
-                admins.push(cleanSender);
-                admins.push(senderDigits);
-            }
-            return reply('👑 ¡Listo! Te has registrado como Administrador General.');
-        }
-
-        if (texto === 'soysoporte') {
-            if (!soportes.includes(cleanSender)) {
-                soportes.push(cleanSender);
-                soportes.push(senderDigits);
-            }
-            return reply('🛡️ ¡Listo! Te has registrado como miembro de Soporte.');
-        }
-
         const isUserAdmin = admins.some(a => cleanSender.includes(a) || senderDigits.includes(a));
         const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
 
@@ -117,7 +182,8 @@ async function startBot() {
             
             helpText += '👥 *Comandos Públicos:*\n';
             helpText += '• *turno* - Solicita un turno en la fila.\n';
-            helpText += '• *cancelarturno* - Cancela tu turno actual (cuenta como ayuda utilizada del día).\n';
+            helpText += '• *miturno* - Consulta tu estado en la fila (uso cada 30 min).\n';
+            helpText += '• *cancelarturno* - Cancela tu turno actual.\n';
             helpText += '• *aqui / confirmo / presente* - Confirma tu turno al ser llamado.\n';
             helpText += '• *plantilla* - Envía las imágenes fijas.\n';
             helpText += '• *adplantilla* - Guarda tu plantilla personalizada (adjuntando foto).\n';
@@ -140,7 +206,7 @@ async function startBot() {
                 helpText += '• *kick* - Expulsa al usuario del mensaje citado.\n';
                 helpText += '• *del* - Elimina para todos el mensaje citado.\n';
                 helpText += '• *warn* - Da una advertencia (3 warn = expulsión automática).\n';
-                helpText += '• *cleanwarns* - Limpia las advertencias de un usuario (citando o etiquetando).\n';
+                helpText += '• *cleanwarns* - Limpia las advertencias de un usuario.\n';
                 helpText += '• *demote* - Quita privilegios de admin del grupo y del bot.\n';
                 helpText += '• *banbot* - Quita los derechos de usar comandos del bot a un usuario.\n';
                 helpText += '• *unbanbot* - Restaura los derechos de usar el bot a un usuario.\n';
@@ -154,7 +220,6 @@ async function startBot() {
             return reply(helpText);
         }
 
-        // Control de permisos estrictos
         const isAdminOnlyCommand = texto.startsWith('addadmin') || 
                                    texto.startsWith('addamin') || 
                                    texto.startsWith('deladmin') || 
@@ -217,7 +282,7 @@ async function startBot() {
                 await sock.sendMessage(chatJid, { text: notificationText, mentions: participants }, { quoted: m });
             } catch (err) {
                 console.error(err);
-                return reply('⚠️ Error al notificar a los miembros. Asegúrate de que sea un grupo.');
+                return reply('⚠️ Error al notificar a los miembros.');
             }
             return;
         }
@@ -233,7 +298,7 @@ async function startBot() {
                 return reply(`✅ Usuario expulsado exitosamente.`);
             } catch (err) {
                 console.error(err);
-                return reply('⚠️ Error al expulsar. Asegúrate de que el bot sea administrador del grupo.');
+                return reply('⚠️ Error al expulsar.');
             }
         }
 
@@ -255,10 +320,10 @@ async function startBot() {
                 await sock.groupParticipantsUpdate(chatJid, [target], 'demote');
                 admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
                 soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
-                return reply(`✅ @${target.split('@')[0]} ha sido degradado a miembro y se le retiraron sus privilegios del bot.`, { mentions: [target] });
+                return reply(`✅ @${target.split('@')[0]} ha sido degradado.`, { mentions: [target] });
             } catch (err) {
                 console.error(err);
-                return reply('⚠️ Error al degradar al usuario. Asegúrate de que el bot sea administrador del grupo.');
+                return reply('⚠️ Error al degradar al usuario.');
             }
         }
 
@@ -274,7 +339,7 @@ async function startBot() {
                 }
             }
             if (!target) {
-                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a la que deseas quitar los derechos de usar el bot.');
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a banear del bot.');
             }
             if (!bannedUsers.includes(target)) {
                 bannedUsers.push(target);
@@ -283,7 +348,7 @@ async function startBot() {
             }
             admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
             soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
-            return reply(`🚫 @${target.split('@')[0]} ha sido baneado del bot (ya no puede usar comandos).`, { mentions: [target] });
+            return reply(`🚫 @${target.split('@')[0]} ha sido baneado del bot.`, { mentions: [target] });
         }
 
         if (texto === 'unbanbot') {
@@ -298,11 +363,11 @@ async function startBot() {
                 }
             }
             if (!target) {
-                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona que deseas desbanear del bot.');
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a desbanear.');
             }
             const targetDigits = target.replace(/\D/g, '');
             bannedUsers = bannedUsers.filter(b => b !== target && !target.includes(b) && b !== targetDigits);
-            return reply(`✅ @${target.split('@')[0]} ha sido desbaneado del bot exitosamente.`, { mentions: [target] });
+            return reply(`✅ @${target.split('@')[0]} ha sido desbaneado del bot.`, { mentions: [target] });
         }
 
         if (texto === 'del') {
@@ -334,9 +399,9 @@ async function startBot() {
                 delete warnings[target];
                 try {
                     await sock.groupParticipantsUpdate(chatJid, [target], 'remove');
-                    return reply(`❌ @${targetPhone} ha acumulado 3 advertencias y ha sido expulsado del grupo.`, { mentions: [target] });
+                    return reply(`❌ @${targetPhone} acumuló 3 advertencias y fue expulsado.`, { mentions: [target] });
                 } catch (err) {
-                    return reply(`⚠️ @${targetPhone} alcanzó 3 advertencias, pero no pude expulsarlo (verifica permisos del bot).`, { mentions: [target] });
+                    return reply(`⚠️ @${targetPhone} alcanzó 3 advertencias, pero no pude expulsarlo.`, { mentions: [target] });
                 }
             } else {
                 return reply(`⚠️ Advertencia ${warnings[target]}/3 para @${targetPhone}.`, { mentions: [target] });
@@ -355,19 +420,19 @@ async function startBot() {
                 }
             }
             if (!target) {
-                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a la que deseas limpiar las advertencias.');
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona.');
             }
             const targetPhone = target.split('@')[0];
             if (warnings[target]) {
                 delete warnings[target];
-                return reply(`✅ Se han limpiado todas las advertencias del usuario @${targetPhone}.`, { mentions: [target] });
+                return reply(`✅ Se limpiaron las advertencias de @${targetPhone}.`, { mentions: [target] });
             } else {
-                return reply(`ℹ️ El usuario @${targetPhone} no tiene advertencias activas registradas.`, { mentions: [target] });
+                return reply(`ℹ️ El usuario @${targetPhone} no tiene advertencias.`, { mentions: [target] });
             }
         }
 
         // ==========================================
-        // GESTIÓN DE ROLES (Admins & Soporte)
+        // GESTIÓN DE ROLES
         // ==========================================
         if (texto.startsWith('addadmin') || texto.startsWith('addamin')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -380,7 +445,7 @@ async function startBot() {
                     return reply(`⚠️ Esa persona ya es administrador.`);
                 }
             } else {
-                return reply(`⚠️ Debes etiquetar a la persona (ej: addadmin @usuario).`);
+                return reply(`⚠️ Debes etiquetar a la persona.`);
             }
         }
 
@@ -389,9 +454,9 @@ async function startBot() {
             if (mentioned && mentioned.length > 0) {
                 const target = mentioned[0];
                 admins = admins.filter(a => a !== target);
-                return reply(`✅ Removido de administradores generales.`);
+                return reply(`✅ Removido de administradores.`);
             } else {
-                return reply(`⚠️ Debes etiquetar al admin a eliminar.`);
+                return reply(`⚠️ Debes etiquetar al admin.`);
             }
         }
 
@@ -406,7 +471,7 @@ async function startBot() {
                     return reply(`⚠️ Esa persona ya es soporte.`);
                 }
             } else {
-                return reply(`⚠️ Debes etiquetar a la persona (ej: addsoporte @usuario).`);
+                return reply(`⚠️ Debes etiquetar a la persona.`);
             }
         }
 
@@ -417,7 +482,7 @@ async function startBot() {
                 soportes = soportes.filter(s => s !== target);
                 return reply(`✅ Removido de soporte.`);
             } else {
-                return reply(`⚠️ Debes etiquetar al soporte a eliminar.`);
+                return reply(`⚠️ Debes etiquetar al soporte.`);
             }
         }
 
@@ -428,18 +493,18 @@ async function startBot() {
         }
 
         // ==========================================
-        // TOP SOPORTE (Con contador y última vez)
+        // TOP SOPORTE
         // ==========================================
         if (texto === 'topsoporte') {
             if (Object.keys(statsAdmins).length === 0) {
-                return reply('📊 Aún no hay turnos atendidos registrados.');
+                return reply('📊 Aún no hay turnos atendidos.');
             }
             let topText = '🏆 *TOP SOPORTE (Turnos Atendidos)*\n\n';
             const sorted = Object.entries(statsAdmins).sort((a, b) => b[1] - a[1]);
             sorted.forEach(([jid, count], index) => {
                 const phone = jid.split('@')[0];
                 const lastTime = lastAttended[jid] ? new Date(lastAttended[jid]).toLocaleString() : 'N/A';
-                topText += `${index + 1}. @${phone}\n   • Turnos atendidos: ${count}\n   • Última vez: ${lastTime}\n\n`;
+                topText += `${index + 1}. @${phone}\n   • Turnos: ${count}\n   • Última vez: ${lastTime}\n\n`;
             });
             return sock.sendMessage(chatJid, { text: topText, mentions: sorted.map(s => s[0]) });
         }
@@ -460,13 +525,13 @@ async function startBot() {
                     const userPhone = senderDigits.slice(-10);
                     const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
                     fs.writeFileSync(filePath, buffer);
-                    return reply('✅ ¡Plantilla guardada correctamente! Usa *miplantilla* para verla cuando quieras.');
+                    return reply('✅ ¡Plantilla guardada!');
                 } catch (err) {
                     console.error(err);
                     return reply('⚠️ Error al guardar la imagen.');
                 }
             } else {
-                return reply('⚠️ Debes enviar una imagen adjunta escribiendo *adplantilla*.');
+                return reply('⚠️ Envía una imagen con el texto *adplantilla*.');
             }
         }
 
@@ -475,10 +540,10 @@ async function startBot() {
             const filePath = path.join(__dirname, 'plantillas', `${userPhone}.jpg`);
             if (fs.existsSync(filePath)) {
                 const buffer = fs.readFileSync(filePath);
-                await sock.sendMessage(chatJid, { image: buffer, caption: '📌 Tu plantilla guardada:' }, { quoted: m });
+                await sock.sendMessage(chatJid, { image: buffer, caption: '📌 Tu plantilla:' }, { quoted: m });
                 return;
             } else {
-                return reply('⚠️ No tienes ninguna plantilla guardada.');
+                return reply('⚠️ No tienes plantilla guardada.');
             }
         }
 
@@ -489,7 +554,7 @@ async function startBot() {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
             if (registroDiario[cleanSender] >= 2) {
-                return reply('❌ Ya agotaste tus 2 ayudas del día de hoy.');
+                return reply('❌ Ya agotaste tus 2 ayudas del día.');
             }
             if (cola.some(t => t.sender === cleanSender) || turnosActivos[cleanSender]) {
                 return reply('⚠️ Ya estás en la fila o tienes un turno activo.');
@@ -503,7 +568,31 @@ async function startBot() {
             });
             numTurno++;
             
-            return reply(`✅ *Turno generado exitosamente: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas solicitadas hoy:* ${registroDiario[cleanSender]}/2`);
+            return reply(`✅ *Turno generado: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas hoy:* ${registroDiario[cleanSender]}/2`);
+        }
+
+        if (texto === 'miturno') {
+            const ahora = Date.now();
+            const cooldown = 30 * 60 * 1000; 
+            if (lastMiturnoTime[cleanSender] && (ahora - lastMiturnoTime[cleanSender] < cooldown)) {
+                const minutosRestantes = Math.ceil((cooldown - (ahora - lastMiturnoTime[cleanSender])) / 60000);
+                return reply(`⏳ Debes esperar ${minutosRestantes} minuto(s) más para volver a usar el comando *miturno*.`);
+            }
+            lastMiturnoTime[cleanSender] = ahora;
+
+            if (turnosActivos[cleanSender]) {
+                const turnoActivo = turnosActivos[cleanSender];
+                return reply(`🔔 ¡Tu turno *${turnoActivo.id}* está actualmente *EN ATENCIÓN*! Revisa el llamado del soporte.`);
+            }
+
+            const indexCola = cola.findIndex(t => t.sender === cleanSender);
+            if (indexCola !== -1) {
+                const miTurnoObj = cola[indexCola];
+                const personasDelante = indexCola; 
+                return reply(`🎫 Tu turno es el *${miTurnoObj.id}*.\n📍 Posición en la fila: #${indexCola + 1}\n👥 Personas que te hacen falta: *${personasDelante}*.`);
+            } else {
+                return reply('⚠️ No tienes ningún turno activo ni te encuentras en la fila de espera.');
+            }
         }
 
         if (texto === 'cancelarturno') {
@@ -511,14 +600,12 @@ async function startBot() {
             
             let cancelado = false;
             
-            // Buscar si está en cola de espera
             const indexCola = cola.findIndex(t => t.sender === cleanSender);
             if (indexCola !== -1) {
                 cola.splice(indexCola, 1);
                 cancelado = true;
             }
 
-            // Buscar si tiene un turno activo llamado
             if (turnosActivos[cleanSender]) {
                 clearTimeout(turnosActivos[cleanSender].timer);
                 delete turnosActivos[cleanSender];
@@ -527,9 +614,9 @@ async function startBot() {
 
             if (cancelado) {
                 registroDiario[cleanSender] += 1;
-                return reply(`❌ Has cancelado tu turno exitosamente.\n\nℹ️ Recuerda que la cancelación cuenta como una de tus ayudas utilizadas del día (${registroDiario[cleanSender]}/2).`);
+                return reply(`❌ Turno cancelado.\n\nℹ️ Cuenta como ayuda utilizada (${registroDiario[cleanSender]}/2).`);
             } else {
-                return reply('⚠️ No tienes ningún turno activo ni estás en la fila de espera para cancelar.');
+                return reply('⚠️ No tienes turnos activos ni estás en fila.');
             }
         }
 
@@ -543,15 +630,15 @@ async function startBot() {
                 
                 registroDiario[cleanSender] += 1; 
                 const adminPhone = assignedAdmin ? assignedAdmin.split('@')[0] : '';
-                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, ponte en contacto con el soporte asignado @${adminPhone}`, {
+                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, envíale mensaje privado al soporte asignado @${adminPhone}, solo dispones de 3 minutos para que no se marque como atendido tu turno`, {
                     mentions: assignedAdmin ? [assignedAdmin] : []
                 });
             } else {
                 const enCola = cola.some(t => t.sender === cleanSender);
                 if (enCola) {
-                    return reply('⏳ Todavía no has sido llamado. Espera a que el soporte te llame.');
+                    return reply('⏳ Aún no has sido llamado.');
                 } else {
-                    return reply('⚠️ No tienes ningún turno activo ni estás en la fila.');
+                    return reply('⚠️ No tienes turnos activos.');
                 }
             }
         }
@@ -567,7 +654,7 @@ async function startBot() {
                     }
                 }
                 if (enviadas === 0) {
-                    return reply('⚠️ Error: No se encontraron las imágenes fijas.');
+                    return reply('⚠️ No se encontraron las imágenes.');
                 }
             } catch (error) {
                 console.error(error);
@@ -576,10 +663,10 @@ async function startBot() {
         }
 
         // ==========================================
-        // COMANDOS DE SOPORTE (Soporte o Admins)
+        // COMANDOS DE SOPORTE
         // ==========================================
         if (texto === 'siguiente') {
-            if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
+            if (cola.length === 0) return reply('📭 Fila vacía.');
 
             const turnoActual = cola.shift(); 
             
@@ -587,54 +674,21 @@ async function startBot() {
             statsAdmins[cleanSender]++;
             lastAttended[cleanSender] = Date.now(); 
             
-            let rango = "Soporte Técnico";
-            if (statsAdmins[cleanSender] >= 50) rango = "Veterano";
-            if (statsAdmins[cleanSender] >= 100) rango = "👑 Rey del Soporte";
-
             const userPhone = turnoActual.sender.split('@')[0];
             const adminPhone = cleanSender.split('@')[0];
 
             const msgLlamado = `📢 *TURNO EN ATENCIÓN*
 
-🎫 Turno:
-*${turnoActual.id}*
+🎫 Turno: *${turnoActual.id}*
+👤 Usuario: @${userPhone}
+🛡️ Soporte: @${adminPhone}
 
-👤 Usuario:
-@${userPhone}
-________________________
+✅ Para confirmar responde:
+aqui
+confirmo
+presente
 
-✅ PARA CONFIRMAR TU TURNO RESPONDE:
-
-• aqui
-• confirmo
-• presente
-
-⏳ Tienes *3 minutos* para responder.
-________________________
-
-📊 *INFORMACIÓN DEL TURNO*
-
-🟡 Estado: LLAMADO
-
-📍 Posición anterior: #1
-
-👥 Personas delante: 0
-
-🛡️ Soporte asignado:
-@${adminPhone}
-________________________
-
-🕵️‍♂️ *INFORMACIÓN DEL SOPORTE*
-
-🎫 Turnos atendidos: ${statsAdmins[cleanSender]}
-
-🎖️ Rango:
-${rango}
-________________________
-
-⚠️ Si no confirmas dentro del tiempo límite, el turno será finalizado automáticamente y tendrás que solicitar uno nuevo.
-
-🤖 Sistema de Gestión de Turnos`;
+⏳ Tienes *3 minutos* para responder, sino respondes tu turno se finalizara en automatico y tendras que solicitar uno nuevo.`;
 
             await sock.sendMessage(chatJid, {
                 text: msgLlamado,
@@ -658,14 +712,14 @@ ________________________
         }
 
         if (texto === 'turnos') {
-            if (cola.length === 0) return reply('📭 La fila está vacía.');
+            if (cola.length === 0) return reply('📭 Fila vacía.');
             
-            let lista = `📋 *LISTA DE TURNOS*\n\n📊 Total en cola: ${cola.length}\n\n`;
+            let lista = `📋 *LISTA DE TURNOS* (${cola.length})\n\n`;
             const ahora = Date.now();
 
             cola.forEach((t) => {
                 const minEspera = Math.floor((ahora - t.tiempoRegistro) / 60000); 
-                lista += `🎫 ${t.id}\n📌 Estado: PENDIENTE\n👤 @${t.sender.split('@')[0]}\n⏳ Espera: ${minEspera} min\n\n`;
+                lista += `🎫 ${t.id} - @${t.sender.split('@')[0]} (${minEspera} min)\n`;
             });
 
             return sock.sendMessage(chatJid, { text: lista, mentions: cola.map(t => t.sender) });
@@ -688,9 +742,9 @@ ________________________
                 statsAdmins[cleanSender]++;
                 lastAttended[cleanSender] = Date.now(); 
 
-                return reply(`✅ Turno ${idMayus} retirado de la fila y marcado como atendido.`);
+                return reply(`✅ Turno ${idMayus} marcado como atendido.`);
             } else {
-                return reply(`⚠️ No se encontró el turno ${idMayus} en la fila.`);
+                return reply(`⚠️ No se encontró el turno ${idMayus}.`);
             }
         }
     });
