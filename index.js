@@ -11,14 +11,15 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Lista inicial de respaldo de administradores
-let adminNumbers = [
-    '7205553249', '4623421390', '970905290', '9842416884',
-    '6147914642', '8261510387', '7821662353', '996122609',
-    '2616395161', '554788902892', '6862456423', '7821420226', 
-    '6024871043', '978930965', '7205552328', '9624023210', 
-    '84477977', '7773243291'
+// Listas iniciales de administradores y soportes
+let admins = [
+    '7205553249', '5217205553249@s.whatsapp.net'
 ];
+let soportes = [
+    '4623421390', '970905290'
+];
+
+let warnings = {}; // { userJid: count }
 
 app.get('/', (req, res) => {
     if (qrImagen) {
@@ -81,80 +82,146 @@ async function startBot() {
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // Comando de emergencia para volverse admin
+        // Comandos de auto-asignación rápida
         if (texto === 'soyadmin') {
-            if (!adminNumbers.includes(cleanSender)) {
-                adminNumbers.push(cleanSender);
-                adminNumbers.push(senderDigits);
+            if (!admins.includes(cleanSender)) {
+                admins.push(cleanSender);
+                admins.push(senderDigits);
             }
-            return reply('👑 ¡Listo! Te he registrado oficialmente como miembro de soporte con tu identificador actual.');
+            return reply('👑 ¡Listo! Te has registrado como Administrador General.');
         }
 
-        const isUserAdmin = adminNumbers.some(num => cleanSender.includes(num) || senderDigits.includes(num));
+        if (texto === 'soysoporte') {
+            if (!soportes.includes(cleanSender)) {
+                soportes.push(cleanSender);
+                soportes.push(senderDigits);
+            }
+            return reply('🛡️ ¡Listo! Te has registrado como miembro de Soporte.');
+        }
 
-        // Lista de comandos exclusivos de soporte
-        const isAdminCommand = texto.startsWith('addsoporte') || 
-                               texto.startsWith('delsoporte') || 
-                               texto === 'listaadmins' || 
-                               texto === 'siguiente' || 
-                               texto === 'turnos' || 
-                               texto.startsWith('atendido') ||
-                               texto === 'kick' ||
-                               texto === 'del';
+        const isUserAdmin = admins.some(a => cleanSender.includes(a) || senderDigits.includes(a));
+        const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
 
-        if (isAdminCommand && !isUserAdmin) {
-            return reply('⚠️ No eres miembro de soporte. Escribe *soyadmin* si deberías tener acceso.');
+        // Control de permisos estrictos
+        const isAdminOnlyCommand = texto.startsWith('addadmin') || 
+                                   texto.startsWith('addamin') || 
+                                   texto.startsWith('deladmin') || 
+                                   texto.startsWith('addsoporte') || 
+                                   texto.startsWith('delsoporte') || 
+                                   texto === 'listaadmins' || 
+                                   texto === 'kick' || 
+                                   texto === 'del' || 
+                                   texto === 'warn';
+
+        if (isAdminOnlyCommand && !isUserAdmin) {
+            return reply('⚠️ No tienes privilegios de Administrador General.');
+        }
+
+        const isSupportCommand = texto === 'siguiente' || 
+                                 texto === 'turnos' || 
+                                 texto.startsWith('atendido') || 
+                                 texto === 'topsoporte';
+
+        if (isSupportCommand && !isUserSupport) {
+            return reply('⚠️ No eres miembro de soporte.');
         }
 
         // ==========================================
-        // COMANDOS DE MODERACIÓN (Kick y Del)
+        // COMANDOS DE MODERACIÓN (Solo Admins)
         // ==========================================
         if (texto === 'kick') {
             const contextInfo = m.message.extendedTextMessage?.contextInfo;
             if (!contextInfo || !contextInfo.participant) {
-                return reply('⚠️ Debes responder (citar) al mensaje de la persona que deseas expulsar.');
+                return reply('⚠️ Debes citar el mensaje de la persona que deseas expulsar.');
             }
             const targetParticipant = contextInfo.participant;
             try {
                 await sock.groupParticipantsUpdate(chatJid, [targetParticipant], 'remove');
-                return reply(`✅ Usuario expulsado del grupo exitosamente.`);
+                return reply(`✅ Usuario expulsado exitosamente.`);
             } catch (err) {
                 console.error(err);
-                return reply('⚠️ Error al expulsar al usuario. Asegúrate de que el bot sea administrador del grupo.');
+                return reply('⚠️ Error al expulsar. Asegúrate de que el bot sea administrador del grupo.');
             }
         }
 
         if (texto === 'del') {
             const contextInfo = m.message.extendedTextMessage?.contextInfo;
             if (!contextInfo || !contextInfo.stanzaId) {
-                return reply('⚠️ Debes responder (citar) al mensaje que deseas eliminar.');
+                return reply('⚠️ Debes citar el mensaje que deseas eliminar.');
             }
-            const messageKey = {
-                remoteJid: chatJid,
-                id: contextInfo.stanzaId,
-                participant: contextInfo.participant
-            };
             try {
-                await sock.sendMessage(chatJid, { delete: messageKey });
-                return; // No requiere respuesta de texto obligatoria, borra directo
+                // Eliminar el mensaje seleccionado
+                await sock.sendMessage(chatJid, { delete: { remoteJid: chatJid, id: contextInfo.stanzaId, participant: contextInfo.participant } });
+                // Eliminar el mensaje del comando 'del'
+                await sock.sendMessage(chatJid, { delete: m.key });
             } catch (err) {
                 console.error(err);
-                return reply('⚠️ Error al eliminar el mensaje. Asegúrate de que el bot sea administrador.');
+                return reply('⚠️ Error al eliminar los mensajes.');
+            }
+            return;
+        }
+
+        if (texto === 'warn') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            if (!contextInfo || !contextInfo.participant) {
+                return reply('⚠️ Debes citar un mensaje del usuario al que deseas advertir.');
+            }
+            const target = contextInfo.participant;
+            const targetPhone = target.split('@')[0];
+            if (!warnings[target]) warnings[target] = 0;
+            warnings[target]++;
+
+            if (warnings[target] >= 3) {
+                delete warnings[target];
+                try {
+                    await sock.groupParticipantsUpdate(chatJid, [target], 'remove');
+                    return reply(`❌ @${targetPhone} ha acumulado 3 advertencias y ha sido expulsado del grupo.`, { mentions: [target] });
+                } catch (err) {
+                    return reply(`⚠️ @${targetPhone} alcanzó 3 advertencias, pero no pude expulsarlo (verifica permisos del bot).`, { mentions: [target] });
+                }
+            } else {
+                return reply(`⚠️ Advertencia ${warnings[target]}/3 para @${targetPhone}.`, { mentions: [target] });
             }
         }
 
         // ==========================================
-        // GESTIÓN DINÁMICA DE ADMINS
+        // GESTIÓN DE ROLES (Admins & Soporte)
         // ==========================================
+        if (texto.startsWith('addadmin') || texto.startsWith('addamin')) {
+            const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
+            if (mentioned && mentioned.length > 0) {
+                const target = mentioned[0];
+                if (!admins.includes(target)) {
+                    admins.push(target);
+                    return reply(`✅ @${target.split('@')[0]} ahora es Administrador General.`);
+                } else {
+                    return reply(`⚠️ Esa persona ya es administrador.`);
+                }
+            } else {
+                return reply(`⚠️ Debes etiquetar a la persona (ej: addadmin @usuario).`);
+            }
+        }
+
+        if (texto.startsWith('deladmin')) {
+            const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
+            if (mentioned && mentioned.length > 0) {
+                const target = mentioned[0];
+                admins = admins.filter(a => a !== target);
+                return reply(`✅ Removido de administradores generales.`);
+            } else {
+                return reply(`⚠️ Debes etiquetar al admin a eliminar.`);
+            }
+        }
+
         if (texto.startsWith('addsoporte')) {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 const target = mentioned[0];
-                if (!adminNumbers.includes(target)) {
-                    adminNumbers.push(target);
-                    return reply(`✅ @${target.split('@')[0]} ahora es administrador.`);
+                if (!soportes.includes(target)) {
+                    soportes.push(target);
+                    return reply(`✅ @${target.split('@')[0]} ahora es Soporte (sin privilegios de moderación).`);
                 } else {
-                    return reply(`⚠️ Esa persona ya es administrador.`);
+                    return reply(`⚠️ Esa persona ya es soporte.`);
                 }
             } else {
                 return reply(`⚠️ Debes etiquetar a la persona (ej: addsoporte @usuario).`);
@@ -165,15 +232,33 @@ async function startBot() {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 const target = mentioned[0];
-                adminNumbers = adminNumbers.filter(n => n !== target);
-                return reply(`✅ Eliminado de administradores.`);
+                soportes = soportes.filter(s => s !== target);
+                return reply(`✅ Removido de soporte.`);
             } else {
-                return reply(`⚠️ Debes etiquetar a la persona a eliminar.`);
+                return reply(`⚠️ Debes etiquetar al soporte a eliminar.`);
             }
         }
 
         if (texto === 'listaadmins') {
-            return reply(`👑 *Identificadores de soporte activos:*\n${adminNumbers.map(n => '• ' + n).join('\n')}`);
+            return reply(`👑 *Administradores:* \n${admins.map(a => '• @' + a.split('@')[0]).join('\n')}\n\n🛡️ *Soportes:* \n${soportes.map(s => '• @' + s.split('@')[0]).join('\n')}`, {
+                mentions: [...admins, ...soportes]
+            });
+        }
+
+        // ==========================================
+        // TOP SOPORTE
+        // ==========================================
+        if (texto === 'topsoporte') {
+            if (Object.keys(statsAdmins).length === 0) {
+                return reply('📊 Aún no hay turnos atendidos registrados.');
+            }
+            let topText = '🏆 *TOP SOPORTE (Turnos Atendidos)*\n\n';
+            const sorted = Object.entries(statsAdmins).sort((a, b) => b[1] - a[1]);
+            sorted.forEach(([jid, count], index) => {
+                const phone = jid.split('@')[0];
+                topText += `${index + 1}. @${phone} - ${count} turnos\n`;
+            });
+            return sock.sendMessage(chatJid, { text: topText, mentions: sorted.map(s => s[0]) });
         }
 
         // ==========================================
@@ -195,10 +280,10 @@ async function startBot() {
                     return reply('✅ ¡Plantilla guardada correctamente! Usa *miplantilla* para verla cuando quieras.');
                 } catch (err) {
                     console.error(err);
-                    return reply('⚠️ Error al guardar la imagen. Inténtalo de nuevo.');
+                    return reply('⚠️ Error al guardar la imagen.');
                 }
             } else {
-                return reply('⚠️ Debes enviar una imagen adjunta escribiendo *adplantilla* en el texto o descripción.');
+                return reply('⚠️ Debes enviar una imagen adjunta escribiendo *adplantilla*.');
             }
         }
 
@@ -210,7 +295,7 @@ async function startBot() {
                 await sock.sendMessage(chatJid, { image: buffer, caption: '📌 Tu plantilla guardada:' }, { quoted: m });
                 return;
             } else {
-                return reply('⚠️ No tienes ninguna plantilla guardada. Manda una foto con la palabra *adplantilla* para registrarla.');
+                return reply('⚠️ No tienes ninguna plantilla guardada.');
             }
         }
 
@@ -243,16 +328,20 @@ async function startBot() {
             if (turnosActivos[cleanSender]) {
                 clearTimeout(turnosActivos[cleanSender].timer); 
                 const turnoId = turnosActivos[cleanSender].id;
+                const assignedAdmin = turnosActivos[cleanSender].admin;
                 delete turnosActivos[cleanSender]; 
                 
                 registroDiario[cleanSender] += 1; 
-                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy. ¡Procedan!`);
+                const adminPhone = assignedAdmin ? assignedAdmin.split('@')[0] : '';
+                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, ponte en contacto con cái soporte asignado @${adminPhone}`, {
+                    mentions: assignedAdmin ? [assignedAdmin] : []
+                });
             } else {
                 const enCola = cola.some(t => t.sender === cleanSender);
                 if (enCola) {
-                    return reply('⏳ Todavía no has sido llamado. Espera a que el soporte te llame con el comando *siguiente*.');
+                    return reply('⏳ Todavía no has sido llamado. Espera a que el soporte te llame.');
                 } else {
-                    return reply('⚠️ No tienes ningún turno activo ni estás en la fila. Escribe *turno* para solicitar uno.');
+                    return reply('⚠️ No tienes ningún turno activo ni estás en la fila.');
                 }
             }
         }
@@ -268,7 +357,7 @@ async function startBot() {
                     }
                 }
                 if (enviadas === 0) {
-                    return reply('⚠️ Error: No se encontraron las imágenes fijas en el servidor.');
+                    return reply('⚠️ Error: No se encontraron las imágenes fijas.');
                 }
             } catch (error) {
                 console.error(error);
@@ -277,7 +366,7 @@ async function startBot() {
         }
 
         // ==========================================
-        // COMANDOS DE SOPORTE (Solo admins)
+        // COMANDOS DE SOPORTE (Soporte o Admins)
         // ==========================================
         if (texto === 'siguiente') {
             if (cola.length === 0) return reply('📭 No hay nadie en la fila.');
@@ -343,6 +432,7 @@ ________________________
 
             turnosActivos[turnoActual.sender] = {
                 id: turnoActual.id,
+                admin: cleanSender,
                 timer: setTimeout(async () => {
                     await sock.sendMessage(chatJid, {
                         text: `❌ @${userPhone} no respondió. El turno ${turnoActual.id} ha sido finalizado automáticamente.`,
