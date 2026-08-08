@@ -11,15 +11,17 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Listas iniciales de administradores y soportes
+// Listas iniciales de administradores, soportes y baneados del bot
 let admins = [
     '7205553249', '5217205553249@s.whatsapp.net'
 ];
 let soportes = [
     '4623421390', '970905290'
 ];
+let bannedUsers = []; // Lista de usuarios baneados de usar el bot
 
 let warnings = {}; // { userJid: count }
+let lastAttended = {}; // { adminJid: timestamp }
 
 app.get('/', (req, res) => {
     if (qrImagen) {
@@ -72,6 +74,11 @@ async function startBot() {
         const sender = m.key.participant || chatJid;
         const cleanSender = sender.replace(/:\d+@/, '@');
         const senderDigits = cleanSender.replace(/\D/g, '');
+
+        // Si el usuario está baneado del bot, ignoramos sus mensajes por completo
+        if (bannedUsers.includes(cleanSender) || bannedUsers.some(b => senderDigits.includes(b))) {
+            return;
+        }
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
         const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
@@ -102,6 +109,49 @@ async function startBot() {
         const isUserAdmin = admins.some(a => cleanSender.includes(a) || senderDigits.includes(a));
         const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
 
+        // ==========================================
+        // COMANDO HELP DINÁMICO SEGÚN ROL
+        // ==========================================
+        if (texto === 'help') {
+            let helpText = '🤖 *LISTA DE COMANDOS DISPONIBLES*\n\n';
+            
+            helpText += '👥 *Comandos Públicos:*\n';
+            helpText += '• *turno* - Solicita un turno en la fila.\n';
+            helpText += '• *aqui / confirmo / presente* - Confirma tu turno al ser llamado.\n';
+            helpText += '• *plantilla* - Envía las imágenes fijas.\n';
+            helpText += '• *adplantilla* - Guarda tu plantilla personalizada (adjuntando foto).\n';
+            helpText += '• *miplantilla* - Muestra tu plantilla guardada.\n';
+            helpText += '• *help* - Muestra esta lista de comandos.\n\n';
+
+            if (isUserSupport || isUserAdmin) {
+                helpText += '🛡️ *Comandos de Soporte:*\n';
+                helpText += '• *siguiente* - Llama al siguiente usuario de la fila.\n';
+                helpText += '• *turnos* - Muestra la lista de turnos pendientes.\n';
+                helpText += '• *atendido TXXXX* - Marca un turno específico como atendido.\n';
+                helpText += '• *topsoporte* - Muestra el ranking de turnos atendidos y última vez.\n';
+                helpText += '• *soysoporte* - Registro rápido como soporte.\n\n';
+            }
+
+            if (isUserAdmin) {
+                helpText += '👑 *Comandos de Administrador General:*\n';
+                helpText += '• *kick* - Expulsa al usuario del mensaje citado.\n';
+                helpText += '• *del* - Elimina para todos el mensaje citado.\n';
+                helpText += '• *warn* - Da una advertencia (3 warn = expulsión automática).\n';
+                helpText += '• *cleanwarns* - Limpia las advertencias de un usuario (citando o etiquetando).\n';
+                helpText += '• *demote* - Quita privilegios de admin del grupo y del bot.\n';
+                helpText += '• *banbot* - Quita los derechos de usar comandos del bot a un usuario.\n';
+                helpText += '• *unbanbot* - Restaura los derechos de usar el bot a un usuario.\n';
+                helpText += '• *addadmin @usuario* - Agrega un Administrador General.\n';
+                helpText += '• *deladmin @usuario* - Elimina un Administrador General.\n';
+                helpText += '• *addsoporte @usuario* - Agrega un miembro de soporte.\n';
+                helpText += '• *delsoporte @usuario* - Elimina un miembro de soporte.\n';
+                helpText += '• *listaadmins* - Muestra la lista de administradores y soportes.\n';
+                helpText += '• *soyadmin* - Registro rápido como Administrador General.\n';
+            }
+
+            return reply(helpText);
+        }
+
         // Control de permisos estrictos
         const isAdminOnlyCommand = texto.startsWith('addadmin') || 
                                    texto.startsWith('addamin') || 
@@ -112,7 +162,10 @@ async function startBot() {
                                    texto === 'kick' || 
                                    texto === 'del' || 
                                    texto === 'warn' ||
-                                   texto.startsWith('cleanwarns');
+                                   texto.startsWith('cleanwarns') ||
+                                   texto === 'demote' ||
+                                   texto === 'banbot' ||
+                                   texto === 'unbanbot';
 
         if (isAdminOnlyCommand && !isUserAdmin) {
             return reply('⚠️ No tienes privilegios de Administrador General.');
@@ -143,6 +196,74 @@ async function startBot() {
                 console.error(err);
                 return reply('⚠️ Error al expulsar. Asegúrate de que el bot sea administrador del grupo.');
             }
+        }
+
+        if (texto === 'demote') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            let target = null;
+            if (contextInfo && contextInfo.participant) {
+                target = contextInfo.participant;
+            } else {
+                const mentioned = contextInfo?.mentionedJid;
+                if (mentioned && mentioned.length > 0) {
+                    target = mentioned[0];
+                }
+            }
+            if (!target) {
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona que deseas degradar.');
+            }
+            try {
+                await sock.groupParticipantsUpdate(chatJid, [target], 'demote');
+                admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
+                soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
+                return reply(`✅ @${target.split('@')[0]} ha sido degradado a miembro y se le retiraron sus privilegios del bot.`, { mentions: [target] });
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al degradar al usuario. Asegúrate de que el bot sea administrador del grupo.');
+            }
+        }
+
+        if (texto === 'banbot') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            let target = null;
+            if (contextInfo && contextInfo.participant) {
+                target = contextInfo.participant;
+            } else {
+                const mentioned = contextInfo?.mentionedJid;
+                if (mentioned && mentioned.length > 0) {
+                    target = mentioned[0];
+                }
+            }
+            if (!target) {
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona a la que deseas quitar los derechos de usar el bot.');
+            }
+            if (!bannedUsers.includes(target)) {
+                bannedUsers.push(target);
+                const targetDigits = target.replace(/\D/g, '');
+                if (!bannedUsers.includes(targetDigits)) bannedUsers.push(targetDigits);
+            }
+            admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
+            soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
+            return reply(`🚫 @${target.split('@')[0]} ha sido baneado del bot (ya no puede usar comandos).`, { mentions: [target] });
+        }
+
+        if (texto === 'unbanbot') {
+            const contextInfo = m.message.extendedTextMessage?.contextInfo;
+            let target = null;
+            if (contextInfo && contextInfo.participant) {
+                target = contextInfo.participant;
+            } else {
+                const mentioned = contextInfo?.mentionedJid;
+                if (mentioned && mentioned.length > 0) {
+                    target = mentioned[0];
+                }
+            }
+            if (!target) {
+                return reply('⚠️ Debes citar un mensaje o etiquetar a la persona que deseas desbanear del bot.');
+            }
+            const targetDigits = target.replace(/\D/g, '');
+            bannedUsers = bannedUsers.filter(b => b !== target && !target.includes(b) && b !== targetDigits);
+            return reply(`✅ @${target.split('@')[0]} ha sido desbaneado del bot exitosamente.`, { mentions: [target] });
         }
 
         if (texto === 'del') {
@@ -268,7 +389,7 @@ async function startBot() {
         }
 
         // ==========================================
-        // TOP SOPORTE
+        // TOP SOPORTE (Con contador y última vez)
         // ==========================================
         if (texto === 'topsoporte') {
             if (Object.keys(statsAdmins).length === 0) {
@@ -278,7 +399,8 @@ async function startBot() {
             const sorted = Object.entries(statsAdmins).sort((a, b) => b[1] - a[1]);
             sorted.forEach(([jid, count], index) => {
                 const phone = jid.split('@')[0];
-                topText += `${index + 1}. @${phone} - ${count} turnos\n`;
+                const lastTime = lastAttended[jid] ? new Date(lastAttended[jid]).toLocaleString() : 'N/A';
+                topText += `${index + 1}. @${phone}\n   • Turnos atendidos: ${count}\n   • Última vez: ${lastTime}\n\n`;
             });
             return sock.sendMessage(chatJid, { text: topText, mentions: sorted.map(s => s[0]) });
         }
@@ -397,6 +519,7 @@ async function startBot() {
             
             if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
             statsAdmins[cleanSender]++;
+            lastAttended[cleanSender] = Date.now(); // Actualiza la última vez que atendió
             
             let rango = "Soporte Técnico";
             if (statsAdmins[cleanSender] >= 50) rango = "Veterano";
@@ -497,6 +620,7 @@ ________________________
                 
                 if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
                 statsAdmins[cleanSender]++;
+                lastAttended[cleanSender] = Date.now(); // Actualiza la última vez que atendió
 
                 return reply(`✅ Turno ${idMayus} retirado de la fila y marcado como atendido.`);
             } else {
