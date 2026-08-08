@@ -11,12 +11,12 @@ let qrImagen = '';
 if (!fs.existsSync('./plantillas')) fs.mkdirSync('./plantillas');
 if (!fs.existsSync('./auth_info_baileys')) fs.mkdirSync('./auth_info_baileys');
 
-// Listas iniciales de administradores, soportes y baneados del bot
+// Listas iniciales de administradores, soportes y baneados del bot (en formato JID seguro)
 let admins = [
-    '7205553249', '5217205553249@s.whatsapp.net'
+    '7205553249@s.whatsapp.net', '5217205553249@s.whatsapp.net'
 ];
 let soportes = [
-    '4623421390', '970905290'
+    '4623421390@s.whatsapp.net', '970905290@s.whatsapp.net'
 ];
 let bannedUsers = []; 
 
@@ -116,6 +116,8 @@ async function startBot() {
 • \`turno\` ➔ Solicita un turno en la fila.
 • \`miturno\` ➔ Consulta tu estado actual.
 • \`cancelarturno\` ➔ Cancela tu turno.
+• \`helpadmin\` ➔ Llama a los administradores.
+• \`helpsoporte\` ➔ Llama al soporte técnico.
 • \`aqui / confirmo\` ➔ Confirma tu llamado.
 • \`plantilla\` ➔ Envía las imágenes fijas.
 • \`miplantilla\` ➔ Muestra tu plantilla personal.`;
@@ -163,7 +165,6 @@ async function startBot() {
         if (texto === 'soyadmin') {
             if (!admins.includes(cleanSender)) {
                 admins.push(cleanSender);
-                admins.push(senderDigits);
             }
             return reply('👑 *¡Listo!*\n\nTe has registrado exitosamente como Administrador General.');
         }
@@ -171,13 +172,12 @@ async function startBot() {
         if (texto === 'soysoporte') {
             if (!soportes.includes(cleanSender)) {
                 soportes.push(cleanSender);
-                soportes.push(senderDigits);
             }
             return reply('🛡️ *¡Listo!*\n\nTe has registrado exitosamente como miembro de Soporte.');
         }
 
-        const isUserAdmin = admins.some(a => cleanSender.includes(a) || senderDigits.includes(a));
-        const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
+        const isUserAdmin = admins.some(a => cleanSender.includes(a.split('@')[0]) || senderDigits.includes(a.split('@')[0]));
+        const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s.split('@')[0]) || senderDigits.includes(s.split('@')[0]));
 
         // ==========================================
         // COMANDO HELP (ESTRUCTURADO Y CÓMODO)
@@ -190,6 +190,8 @@ async function startBot() {
             helpText += '• *turno* ➔ Solicita un turno en la fila.\n';
             helpText += '• *miturno* ➔ Consulta tu estado en la fila (cada 30 min).\n';
             helpText += '• *cancelarturno* ➔ Cancela tu turno actual.\n';
+            helpText += '• *helpadmin* ➔ Llama o etiqueta a los administradores.\n';
+            helpText += '• *helpsoporte* ➔ Llama o etiqueta al equipo de soporte.\n';
             helpText += '• *aqui / confirmo / presente* ➔ Confirma tu turno al ser llamado.\n';
             helpText += '• *plantilla* ➔ Envía las imágenes fijas.\n';
             helpText += '• *adplantilla* ➔ Guarda tu plantilla personalizada (adjuntando foto).\n';
@@ -259,6 +261,29 @@ async function startBot() {
         }
 
         // ==========================================
+        // COMANDOS DE AYUDA RÁPIDA (HELPADMIN / HELPSOPORTE)
+        // ==========================================
+        if (texto === 'helpadmin') {
+            if (admins.length === 0) return reply('⚠️ *Aviso*\n\nNo hay administradores generales registrados en este momento.');
+            const safeAdmins = admins.map(a => a.includes('@') ? a : `${a}@s.whatsapp.net`);
+            let msgAdmin = '👑 *ATENCIÓN ADMINISTRADORES* 👑\n\n────────────────────────\n';
+            msgAdmin += 'Se solicita la presencia de un administrador para revisar una situación o duda.\n\n';
+            msgAdmin += safeAdmins.map(a => `• @${a.split('@')[0]}`).join('\n');
+            msgAdmin += '\n────────────────────────';
+            return sock.sendMessage(chatJid, { text: msgAdmin, mentions: safeAdmins }, { quoted: m });
+        }
+
+        if (texto === 'helpsoporte') {
+            if (soportes.length === 0) return reply('⚠️ *Aviso*\n\nNo hay miembros de soporte registrados en este momento.');
+            const safeSoportes = soportes.map(s => s.includes('@') ? s : `${s}@s.whatsapp.net`);
+            let msgSoporte = '🛡️ *ATENCIÓN SOPORTE TÉCNICO* 🛡️\n\n────────────────────────\n';
+            msgSoporte += 'Se solicita la asistencia del equipo de soporte.\n\n';
+            msgSoporte += safeSoportes.map(s => `• @${s.split('@')[0]}`).join('\n');
+            msgSoporte += '\n────────────────────────';
+            return sock.sendMessage(chatJid, { text: msgSoporte, mentions: safeSoportes }, { quoted: m });
+        }
+
+        // ==========================================
         // COMANDOS DE MODERACIÓN Y GRUPO (Solo Admins)
         // ==========================================
         if (texto === 'cerrargrupo') {
@@ -286,7 +311,7 @@ async function startBot() {
                 const metadata = await sock.groupMetadata(chatJid);
                 const participants = metadata.participants.map(p => p.id);
                 const customMsg = rawText.replace(/^\.?notify/i, '').trim();
-                const notificationText = `📢 *AVISO GENERAL*\n\n────────────────────────\n${customMsg || '¡Atención a todos los miembros del grupo!'}\n────────────────────────`;
+                const notificationText = `📢 *AVISO GENERAL*\n\n${customMsg || '¡Atención a todos los miembros del grupo!'}`;
                 await sock.sendMessage(chatJid, { text: notificationText, mentions: participants }, { quoted: m });
             } catch (err) {
                 console.error(err);
@@ -326,8 +351,8 @@ async function startBot() {
             }
             try {
                 await sock.groupParticipantsUpdate(chatJid, [target], 'demote');
-                admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
-                soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
+                admins = admins.filter(a => !target.includes(a.split('@')[0]));
+                soportes = soportes.filter(s => !target.includes(s.split('@')[0]));
                 return reply(`✅ *Privilegios Retirados*\n\n@${target.split('@')[0]} ha sido degradado a miembro y se le retiraron sus permisos del bot.`, { mentions: [target] });
             } catch (err) {
                 console.error(err);
@@ -351,11 +376,9 @@ async function startBot() {
             }
             if (!bannedUsers.includes(target)) {
                 bannedUsers.push(target);
-                const targetDigits = target.replace(/\D/g, '');
-                if (!bannedUsers.includes(targetDigits)) bannedUsers.push(targetDigits);
             }
-            admins = admins.filter(a => !target.includes(a) && !a.includes(target.replace(/\D/g, '')));
-            soportes = soportes.filter(s => !target.includes(s) && !s.includes(target.replace(/\D/g, '')));
+            admins = admins.filter(a => !target.includes(a.split('@')[0]));
+            soportes = soportes.filter(s => !target.includes(s.split('@')[0]));
             return reply(`🚫 *Usuario Baneado del Bot*\n\n@${target.split('@')[0]} ya no tiene permitido utilizar ningún comando del bot.`, { mentions: [target] });
         }
 
@@ -461,7 +484,7 @@ async function startBot() {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 const target = mentioned[0];
-                admins = admins.filter(a => a !== target);
+                admins = admins.filter(a => !target.includes(a.split('@')[0]));
                 return reply(`✅ *Administrador Removido*\n\nSe han retirado los privilegios de administrador general al usuario.`);
             } else {
                 return reply('⚠️ *Acción Requerida*\n\nDebes etiquetar al administrador que deseas remover.');
@@ -476,7 +499,7 @@ async function startBot() {
                     soportes.push(target);
                     return reply(`✅ *Nuevo Miembro de Soporte*\n\n@${target.split('@')[0]} ahora forma parte del equipo de soporte.`, { mentions: [target] });
                 } else {
-                    return reply(`⚠️ *Aviso*\n\nEsa persona ya forma parte del equipo de soporte.`);
+                    return reply(`⚠️ *Aviso*\n\Esa persona ya forma parte del equipo de soporte.`);
                 }
             } else {
                 return reply('⚠️ *Acción Requerida*\n\nDebes etiquetar a la persona (ej: `addsoporte @usuario`).');
@@ -487,7 +510,7 @@ async function startBot() {
             const mentioned = m.message.extendedTextMessage?.contextInfo?.mentionedJid;
             if (mentioned && mentioned.length > 0) {
                 const target = mentioned[0];
-                soportes = soportes.filter(s => s !== target);
+                soportes = soportes.filter(s => !target.includes(s.split('@')[0]));
                 return reply(`✅ *Soporte Removido*\n\nEl usuario ha sido retirado del equipo de soporte.`);
             } else {
                 return reply('⚠️ *Acción Requerida*\n\nDebes etiquetar al miembro de soporte que deseas remover.');
@@ -495,8 +518,10 @@ async function startBot() {
         }
 
         if (texto === 'listaadmins') {
-            return reply(`👑 *LISTA DE ROLES ACTIVOS* 👑\n\n🛡️ *Administradores Generales:*\n${admins.map(a => '• @' + a.split('@')[0]).join('\n')}\n\n🛡️ *Miembros de Soporte:*\n${soportes.map(s => '• @' + s.split('@')[0]).join('\n')}`, {
-                mentions: [...admins, ...soportes]
+            const safeAdmins = admins.map(a => a.includes('@') ? a : `${a}@s.whatsapp.net`);
+            const safeSoportes = soportes.map(s => s.includes('@') ? s : `${s}@s.whatsapp.net`);
+            return reply(`👑 *LISTA DE ROLES ACTIVOS* 👑\n\n🛡️ *Administradores Generales:*\n${safeAdmins.map(a => '• @' + a.split('@')[0]).join('\n')}\n\n🛡️ *Miembros de Soporte:*\n${safeSoportes.map(s => '• @' + s.split('@')[0]).join('\n')}`, {
+                mentions: [...safeAdmins, ...safeSoportes]
             });
         }
 
