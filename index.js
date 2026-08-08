@@ -81,7 +81,7 @@ async function startBot() {
         }
         
         let rawText = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
-        const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@]/g, "").trim();
+        const texto = rawText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s@\.]/g, "").trim();
 
         revisarDia();
 
@@ -134,6 +134,9 @@ async function startBot() {
 
             if (isUserAdmin) {
                 helpText += '👑 *Comandos de Administrador General:*\n';
+                helpText += '• *cerrargrupo* - Cierra el grupo para que solo los admins escriban.\n';
+                helpText += '• *abrirgrupo* - Abre el grupo para que todos puedan escribir.\n';
+                helpText += '• *.notify [mensaje]* - Etiqueta a todos los miembros del grupo.\n';
                 helpText += '• *kick* - Expulsa al usuario del mensaje citado.\n';
                 helpText += '• *del* - Elimina para todos el mensaje citado.\n';
                 helpText += '• *warn* - Da una advertencia (3 warn = expulsión automática).\n';
@@ -165,7 +168,10 @@ async function startBot() {
                                    texto.startsWith('cleanwarns') ||
                                    texto === 'demote' ||
                                    texto === 'banbot' ||
-                                   texto === 'unbanbot';
+                                   texto === 'unbanbot' ||
+                                   texto === 'cerrargrupo' ||
+                                   texto === 'abrirgrupo' ||
+                                   texto.startsWith('notify');
 
         if (isAdminOnlyCommand && !isUserAdmin) {
             return reply('⚠️ No tienes privilegios de Administrador General.');
@@ -181,8 +187,42 @@ async function startBot() {
         }
 
         // ==========================================
-        // COMANDOS DE MODERACIÓN (Solo Admins)
+        // COMANDOS DE MODERACIÓN Y GRUPO (Solo Admins)
         // ==========================================
+        if (texto === 'cerrargrupo') {
+            try {
+                await sock.groupSettingUpdate(chatJid, 'announcement');
+                return reply('🔒 Grupo cerrado. Ahora solo los administradores pueden enviar mensajes.');
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al cerrar el grupo. Asegúrate de que el bot sea administrador.');
+            }
+        }
+
+        if (texto === 'abrirgrupo') {
+            try {
+                await sock.groupSettingUpdate(chatJid, 'not_announcement');
+                return reply('🔓 Grupo abierto. Todos los miembros pueden enviar mensajes.');
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al abrir el grupo. Asegúrate de que el bot sea administrador.');
+            }
+        }
+
+        if (texto === 'notify' || texto.startsWith('notify ')) {
+            try {
+                const metadata = await sock.groupMetadata(chatJid);
+                const participants = metadata.participants.map(p => p.id);
+                const customMsg = rawText.replace(/^\.?notify/i, '').trim();
+                const notificationText = `📢 *AVISO GENERAL*\n\n${customMsg || '¡Atención a todos los miembros!'}`;
+                await sock.sendMessage(chatJid, { text: notificationText, mentions: participants }, { quoted: m });
+            } catch (err) {
+                console.error(err);
+                return reply('⚠️ Error al notificar a los miembros. Asegúrate de que sea un grupo.');
+            }
+            return;
+        }
+
         if (texto === 'kick') {
             const contextInfo = m.message.extendedTextMessage?.contextInfo;
             if (!contextInfo || !contextInfo.participant) {
@@ -519,7 +559,7 @@ async function startBot() {
             
             if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
             statsAdmins[cleanSender]++;
-            lastAttended[cleanSender] = Date.now(); // Actualiza la última vez que atendió
+            lastAttended[cleanSender] = Date.now(); 
             
             let rango = "Soporte Técnico";
             if (statsAdmins[cleanSender] >= 50) rango = "Veterano";
@@ -620,7 +660,7 @@ ________________________
                 
                 if (!statsAdmins[cleanSender]) statsAdmins[cleanSender] = 0;
                 statsAdmins[cleanSender]++;
-                lastAttended[cleanSender] = Date.now(); // Actualiza la última vez que atendió
+                lastAttended[cleanSender] = Date.now(); 
 
                 return reply(`✅ Turno ${idMayus} retirado de la fila y marcado como atendido.`);
             } else {
