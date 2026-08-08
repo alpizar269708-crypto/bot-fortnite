@@ -171,7 +171,7 @@ del bot, el menú es este:
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
-        // Comandos de auto-asignación rápida (FUNCIONALES PERO OCULTOS EN HELP)
+        // Comandos de auto-asignación rápida
         if (texto === 'soyadmin') {
             if (!admins.includes(cleanSender)) {
                 admins.push(cleanSender);
@@ -192,7 +192,7 @@ del bot, el menú es este:
         const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
 
         // ==========================================
-        // COMANDO HELP (OCULTAMOS SOYADMIN/SOYSOPORTE AQUÍ)
+        // COMANDO HELP DINÁMICO SEGÚN ROL
         // ==========================================
         if (texto === 'help') {
             let helpText = '🤖 *LISTA DE COMANDOS DISPONIBLES*\n\n';
@@ -462,7 +462,7 @@ del bot, el menú es este:
                     return reply(`⚠️ Esa persona ya es administrador.`);
                 }
             } else {
-                return reply(`⚠️ Debes etiquetar a la persona.`);
+                return reply('⚠️ Debes etiquetar a la persona.');
             }
         }
 
@@ -473,7 +473,7 @@ del bot, el menú es este:
                 admins = admins.filter(a => a !== target);
                 return reply(`✅ Removido de administradores.`);
             } else {
-                return reply(`⚠️ Debes etiquetar al admin.`);
+                return reply('⚠️ Debes etiquetar al admin.');
             }
         }
 
@@ -488,7 +488,7 @@ del bot, el menú es este:
                     return reply(`⚠️ Esa persona ya es soporte.`);
                 }
             } else {
-                return reply(`⚠️ Debes etiquetar a la persona.`);
+                return reply('⚠️ Debes etiquetar a la persona.');
             }
         }
 
@@ -499,7 +499,7 @@ del bot, el menú es este:
                 soportes = soportes.filter(s => s !== target);
                 return reply(`✅ Removido de soporte.`);
             } else {
-                return reply(`⚠️ Debes etiquetar al soporte.`);
+                return reply('⚠️ Debes etiquetar al soporte.');
             }
         }
 
@@ -570,8 +570,9 @@ del bot, el menú es este:
         if (texto === 'turno') {
             if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
             
-            if (registroDiario[cleanSender] >= 2) {
-                return reply('❌ Ya agotaste tus 2 ayudas del día.');
+            // LÍMITE AJUSTADO A 1 SOLO TURNO POR HOY
+            if (registroDiario[cleanSender] >= 1) {
+                return reply('❌ Solo por hoy, ya agotaste tu turno permitido del día.');
             }
             if (cola.some(t => t.sender === cleanSender) || turnosActivos[cleanSender]) {
                 return reply('⚠️ Ya estás en la fila o tienes un turno activo.');
@@ -585,7 +586,7 @@ del bot, el menú es este:
             });
             numTurno++;
             
-            return reply(`✅ *Turno generado: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas hoy:* ${registroDiario[cleanSender]}/2`);
+            return reply(`✅ *Turno generado: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas hoy:* ${registroDiario[cleanSender]}/1 (Límite especial de 1 por hoy)`);
         }
 
         if (texto === 'miturno') {
@@ -631,7 +632,7 @@ del bot, el menú es este:
 
             if (cancelado) {
                 registroDiario[cleanSender] += 1;
-                return reply(`❌ Turno cancelado.\n\nℹ️ Cuenta como ayuda utilizada (${registroDiario[cleanSender]}/2).`);
+                return reply(`❌ Turno cancelado.\n\nℹ️ Cuenta como la ayuda utilizada del día (${registroDiario[cleanSender]}/1).`);
             } else {
                 return reply('⚠️ No tienes turnos activos ni estás en fila.');
             }
@@ -647,7 +648,7 @@ del bot, el menú es este:
                 
                 registroDiario[cleanSender] += 1; 
                 const adminPhone = assignedAdmin ? assignedAdmin.split('@')[0] : '';
-                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/2 ayudas hoy, envíale mensaje privado al soporte asignado @${adminPhone}, solo dispones de 3 minutos para que no se marque como atendido tu turno`, {
+                return reply(`✅ Confirmado (Turno ${turnoId}). Llevas ${registroDiario[cleanSender]}/1 ayudas hoy, envíale mensaje privado al soporte asignado @${adminPhone}, solo dispones de 3 minutos para que no se marque como atendido tu turno`, {
                     mentions: assignedAdmin ? [assignedAdmin] : []
                 });
             } else {
