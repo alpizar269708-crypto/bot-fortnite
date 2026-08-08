@@ -171,11 +171,28 @@ del bot, el menú es este:
             await sock.sendMessage(chatJid, { text, ...options }, { quoted: m });
         };
 
+        // Comandos de auto-asignación rápida (FUNCIONALES PERO OCULTOS EN HELP)
+        if (texto === 'soyadmin') {
+            if (!admins.includes(cleanSender)) {
+                admins.push(cleanSender);
+                admins.push(senderDigits);
+            }
+            return reply('👑 ¡Listo! Te has registrado como Administrador General.');
+        }
+
+        if (texto === 'soysoporte') {
+            if (!soportes.includes(cleanSender)) {
+                soportes.push(cleanSender);
+                soportes.push(senderDigits);
+            }
+            return reply('🛡️ ¡Listo! Te has registrado como miembro de Soporte.');
+        }
+
         const isUserAdmin = admins.some(a => cleanSender.includes(a) || senderDigits.includes(a));
         const isUserSupport = isUserAdmin || soportes.some(s => cleanSender.includes(s) || senderDigits.includes(s));
 
         // ==========================================
-        // COMANDO HELP DINÁMICO SEGÚN ROL
+        // COMANDO HELP (OCULTAMOS SOYADMIN/SOYSOPORTE AQUÍ)
         // ==========================================
         if (texto === 'help') {
             let helpText = '🤖 *LISTA DE COMANDOS DISPONIBLES*\n\n';
