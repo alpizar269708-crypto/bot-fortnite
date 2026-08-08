@@ -128,8 +128,7 @@ async function startBot() {
                 helpText += '• *siguiente* - Llama al siguiente usuario de la fila.\n';
                 helpText += '• *turnos* - Muestra la lista de turnos pendientes.\n';
                 helpText += '• *atendido TXXXX* - Marca un turno específico como atendido.\n';
-                helpText += '• *topsoporte* - Muestra el ranking de turnos atendidos y última vez.\n';
-                helpText += '• *soysoporte* - Registro rápido como soporte.\n\n';
+                helpText += '• *topsoporte* - Muestra el ranking de turnos atendidos y última vez.\n\n';
             }
 
             if (isUserAdmin) {
@@ -149,7 +148,6 @@ async function startBot() {
                 helpText += '• *addsoporte @usuario* - Agrega un miembro de soporte.\n';
                 helpText += '• *delsoporte @usuario* - Elimina un miembro de soporte.\n';
                 helpText += '• *listaadmins* - Muestra la lista de administradores y soportes.\n';
-                helpText += '• *soyadmin* - Registro rápido como Administrador General.\n';
             }
 
             return reply(helpText);
