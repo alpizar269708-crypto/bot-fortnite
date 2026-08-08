@@ -1,4 +1,3 @@
-Aquí tienes el código completo y actualizado de tu archivo index.js, con todas las funciones integradas, el diseño visual limpio y espaciado en todos los mensajes, el horario ajustado en zona horaria GMT-6 (México), el límite de 2 ayudas diarias, el comando miturno con su respectivo enfriamiento de 30 minutos, y el mensaje automático de bienvenida con tu imagen oficial de GitHub.
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const express = require('express');
@@ -765,4 +764,3 @@ async function startBot() {
 }
 
 startBot();
-
