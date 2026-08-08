@@ -117,6 +117,7 @@ async function startBot() {
             
             helpText += '👥 *Comandos Públicos:*\n';
             helpText += '• *turno* - Solicita un turno en la fila.\n';
+            helpText += '• *cancelarturno* - Cancela tu turno actual (cuenta como ayuda utilizada del día).\n';
             helpText += '• *aqui / confirmo / presente* - Confirma tu turno al ser llamado.\n';
             helpText += '• *plantilla* - Envía las imágenes fijas.\n';
             helpText += '• *adplantilla* - Guarda tu plantilla personalizada (adjuntando foto).\n';
@@ -503,6 +504,33 @@ async function startBot() {
             numTurno++;
             
             return reply(`✅ *Turno generado exitosamente: ${idTurno}*\nEspera tu llamado en el grupo.\n\n📊 *Ayudas solicitadas hoy:* ${registroDiario[cleanSender]}/2`);
+        }
+
+        if (texto === 'cancelarturno') {
+            if (!registroDiario[cleanSender]) registroDiario[cleanSender] = 0;
+            
+            let cancelado = false;
+            
+            // Buscar si está en cola de espera
+            const indexCola = cola.findIndex(t => t.sender === cleanSender);
+            if (indexCola !== -1) {
+                cola.splice(indexCola, 1);
+                cancelado = true;
+            }
+
+            // Buscar si tiene un turno activo llamado
+            if (turnosActivos[cleanSender]) {
+                clearTimeout(turnosActivos[cleanSender].timer);
+                delete turnosActivos[cleanSender];
+                cancelado = true;
+            }
+
+            if (cancelado) {
+                registroDiario[cleanSender] += 1;
+                return reply(`❌ Has cancelado tu turno exitosamente.\n\nℹ️ Recuerda que la cancelación cuenta como una de tus ayudas utilizadas del día (${registroDiario[cleanSender]}/2).`);
+            } else {
+                return reply('⚠️ No tienes ningún turno activo ni estás en la fila de espera para cancelar.');
+            }
         }
 
         const palabrasConfirmacion = ['aqui', 'confirmo', 'presente'];
